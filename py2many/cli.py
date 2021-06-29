@@ -1,27 +1,15 @@
 import argparse
 import ast
-import builtins
 import os
-import functools
 import string
 
 import sys
 import tempfile
 
-
-from distutils import spawn
 from functools import lru_cache
 from pathlib import Path, PosixPath, WindowsPath
 from subprocess import run
 from typing import List, Optional, Set, Tuple
-from unittest.mock import Mock
-
-from py2many.input_configuration import config_rewriters, parse_input_configurations
-from py2many.module_dependencies import analyse_module_dependencies
-from py2many.pytype_inference import pytype_annotate_and_merge
-from pyjl.optimizations import AlgebraicSimplification, OperationOptimizer, PerformanceOptimizations
-from pynim.rewriters import WithToBlockRewriter
-
 
 from .analysis import add_imports
 
@@ -29,84 +17,16 @@ from .context import add_assignment_context, add_variable_context, add_list_call
 from .exceptions import AstErrorBase
 from .inference import add_is_annotation, infer_types, infer_types_typpete
 from .language import LanguageSettings
-from .transformers import (
-    add_annotation_flags,
-    correct_node_attributes,
-    detect_mutable_vars,
-    detect_nesting_levels,
-)
+from .mutability_transformer import detect_mutable_vars
+from .nesting_transformer import detect_nesting_levels
+from .registry import _get_all_settings, ALL_SETTINGS, FAKE_ARGS
 from .scope import add_scope_context
 from .toposort_modules import toposort
 
-from py2py.transpiler import PythonTranspiler
-from pycpp.transpiler import CppTranspiler, CppListComparisonRewriter
-from pyrs.inference import infer_rust_types
-from pyrs.transpiler import (
-    RustTranspiler,
-    RustLoopIndexRewriter,
-    RustNoneCompareRewriter,
-    RustStringJoinRewriter,
-)
-
-from pyjl.analysis import analyse_variable_scope, detect_broadcast, detect_ctypes_callbacks, loop_range_optimization_analysis
-from pyjl.transformers import find_ordered_collections, parse_decorators
-from pyjl.rewriters import (
-    JuliaArgumentParserRewriter,
-    JuliaContextManagerRewriter,
-    JuliaCtypesCallbackRewriter,
-    JuliaCtypesRewriter,
-    JuliaExceptionRewriter,
-    JuliaUnittestRewriter,
-    VariableScopeRewriter,
-    JuliaArbitraryPrecisionRewriter,
-    JuliaIORewriter,
-    JuliaImportRewriter,
-    JuliaAugAssignRewriter,
-    JuliaGeneratorRewriter,
-    JuliaBoolOpRewriter,
-    JuliaIndexingRewriter,
-    JuliaMainRewriter,
-    JuliaMethodCallRewriter,
-    JuliaModuleRewriter,
-    JuliaOffsetArrayRewriter,
-    JuliaOrderedCollectionRewriter,
-    JuliaClassWrapper, 
-    JuliaIndexingRewriter, 
-    JuliaNestingRemoval
-)
-from pyjl.transpiler import JuliaTranspiler
-from pyjl.inference import infer_julia_types
-
-from pykt.inference import infer_kotlin_types
-from pykt.transpiler import KotlinTranspiler, KotlinPrintRewriter, KotlinBitOpRewriter
-from pynim.inference import infer_nim_types
-from pynim.transpiler import NimTranspiler, NimNoneCompareRewriter
-from pydart.transpiler import DartTranspiler, DartIntegerDivRewriter
-from pygo.inference import infer_go_types
-from pygo.transpiler import (
-    GoTranspiler,
-    GoMethodCallRewriter,
-    GoNoneCompareRewriter,
-    GoPropagateTypeAnnotation,
-    GoVisibilityRewriter,
-    GoIfExpRewriter,
-)
-from pyv.inference import infer_v_types
-from pyv.transpiler import (
-    VTranspiler,
-    VNoneCompareRewriter,
-    VDictRewriter,
-    VComprehensionRewriter,
-)
-from pysmt.transpiler import SmtTranspiler
-from pysmt.inference import infer_smt_types
 
 from py2many.rewriters import (
     ComplexDestructuringRewriter,
     FStringJoinRewriter,
-    LoopElseRewriter,
-    InferredAnnAssignRewriter,
-    UnitTestRewriter,
     PythonMainRewriter,
     DocStringToCommentRewriter,
     PrintBoolRewriter,
@@ -120,7 +40,6 @@ ROOT_DIR = PY2MANY_DIR.parent
 STDIN = "-"
 STDOUT = "-"
 CWD = Path.cwd()
-USER_HOME = os.path.expanduser("~/")
 
 
 def core_transformers(tree, trees, args):
@@ -310,7 +229,6 @@ def _create_cmd(parts, filename, **kw):
         return cmd
     return [*parts, str(filename)]
 
-
 def _parse_expected(outputs, settings, args):
     """Check if files match the expected results"""
 
@@ -341,311 +259,28 @@ def _parse_expected(outputs, settings, args):
         raise Exception(
             f"Could not parse expected files. {file_out} could not be found."
         )
+    
+    def _compare_file_contents(file1_path, file2_path):
+        """Compares file contents for equality"""
 
+        # Read data from files
+        expected_data = None
+        curr_file_data = None
+        with open(file1_path, encoding="utf-8") as f1, open(
+            file2_path, encoding="utf-8"
+        ) as f2:
+            expected_data = f1.read()
+            curr_file_data = f2.read()
 
-def _compare_file_contents(file1_path, file2_path):
-    """Compares file contents for equality"""
+        if expected_data == None or curr_file_data == None:
+            raise Exception(f"File {file1_path} does not have an expected result file")
 
-    # Read data from files
-    expected_data = None
-    curr_file_data = None
-    with open(file1_path, encoding="utf-8") as f1, open(
-        file2_path, encoding="utf-8"
-    ) as f2:
-        expected_data = f1.read()
-        curr_file_data = f2.read()
-
-    if expected_data == None or curr_file_data == None:
-        raise Exception(f"File {file1_path} does not have an expected result file")
-
-    # Check if files match
-    remove = string.whitespace
-    mapping = {ord(c): None for c in remove}
-    data: str = expected_data.translate(mapping)
-    contents: str = curr_file_data.translate(mapping)
-    return contents == data
-
-
-def python_settings(args, env=os.environ):
-    return LanguageSettings(
-        PythonTranspiler(),
-        ".py",
-        "Python",
-        formatter=["black"],
-        rewriters=[],
-        post_rewriters=[InferredAnnAssignRewriter()],
-    )
-
-
-def _conan_include_dirs():
-    CONAN_CATCH2 = "catch2/3.0.1/_/_/package/a25d6c83542b56b72fdaa05a85db5d46f5f0f71c"
-    CONAN_CPPITERTOOLS = (
-        "cppitertools/2.1/_/_/package/5ab84d6acfe1f23c4fae0ab88f26e3a396351ac9"
-    )
-    return [
-        "-I",
-        f"{USER_HOME}/.conan/data/{CONAN_CATCH2}/include",
-        "-I",
-        f"{USER_HOME}/.conan/data/{CONAN_CPPITERTOOLS}/include",
-    ]
-
-
-def cpp_settings(args, env=os.environ):
-    clang_format_style = env.get("CLANG_FORMAT_STYLE")
-    cxx = env.get("CXX")
-    default_cxx = ["clang++", "g++-11", "g++"]
-    if cxx:
-        if not spawn.find_executable(cxx):
-            print(f"Warning: CXX({cxx}) not found")
-            cxx = None
-    if not cxx:
-        for exe in default_cxx:
-            if spawn.find_executable(exe):
-                cxx = exe
-                break
-        else:
-            cxx = default_cxx[0]
-    cxx_flags = env.get("CXXFLAGS")
-    if cxx_flags:
-        cxx_flags = cxx_flags.split()
-    else:
-        cxx_flags = ["-std=c++17", "-Wall", "-Werror"]
-    cxx_flags = ["-I", str(ROOT_DIR)] + _conan_include_dirs() + cxx_flags
-    if cxx.startswith("clang++") and not sys.platform == "win32":
-        cxx_flags += ["-stdlib=libc++"]
-
-    if clang_format_style:
-        clang_format_cmd = ["clang-format", f"-style={clang_format_style}", "-i"]
-    else:
-        clang_format_cmd = ["clang-format", "-i"]
-
-    return LanguageSettings(
-        CppTranspiler(args.extension, args.no_prologue),
-        ".cpp",
-        "C++",
-        clang_format_cmd,
-        None,
-        [CppListComparisonRewriter()],
-        linter=[cxx, *cxx_flags],
-    )
-
-
-def rust_settings(args, env=os.environ):
-    return LanguageSettings(
-        RustTranspiler(args.extension, args.no_prologue),
-        ".rs",
-        "Rust",
-        ["rustfmt", "--edition=2018"],
-        None,
-        rewriters=[RustNoneCompareRewriter()],
-        transformers=[],
-        post_rewriters=[RustLoopIndexRewriter(), RustStringJoinRewriter()],
-        create_project=["cargo", "new", "--bin"],
-        project_subdir="src",
-        inference = functools.partial(infer_rust_types, extension=args.extension),
-    )
-
-
-@lru_cache()
-def _julia_formatter_path():
-    proc = run(
-        ["julia", "-e", "import JuliaFormatter;print(pathof(JuliaFormatter))"],
-        capture_output=True,
-    )
-    if not proc.returncode and proc.stdout:
-        return str(Path(proc.stdout.decode("utf8")).parent.parent / "bin" / "format.jl")
-
-
-def _find_julia_base_funcs():
-    """Finds Julia base functions"""
-    proc = run(
-        ["julia", "-e", "println([n for n in names(Base, all=true) if isdefined(Base, n) && isa(getfield(Base, n), Function)])"],
-        capture_output=True,
-    )
-    if not proc.returncode and proc.stdout:
-        return proc.stdout
-    return b""
-
-
-def julia_settings(args, env=os.environ):
-    format_jl = spawn.find_executable("format.jl")
-    if not format_jl:
-        julia = spawn.find_executable("julia")
-        if julia:
-            format_jl = _julia_formatter_path()
-
-    if format_jl:
-        format_jl = ["julia", "-O0", "--compile=min", "--startup=no", format_jl, "-v"]
-    else:
-        format_jl = ["format.jl", "-v"]
-
-    # Parse Julia base functions 
-    # (TODO: Improve time it takes to import all functions)
-    output = _find_julia_base_funcs().decode(encoding="utf-8")
-    output = output.split(", ")
-    jl_func_list: set[str] = set()
-    for func in output:
-        # Remove ":", as elements are Symbols
-        jl_func_list.add(func[1:])
-    # Remove all Python builtin functions
-    jl_func_list.difference_update(set(dir(builtins)))
-
-    return LanguageSettings(
-        transpiler=JuliaTranspiler(jl_func_list),
-        ext=".jl",
-        display_name="Julia",
-        formatter=format_jl,
-        indent=None,
-        rewriters=[],
-        transformers=[
-            parse_decorators,
-            analyse_variable_scope,
-            loop_range_optimization_analysis,
-            find_ordered_collections,
-            detect_broadcast,
-            detect_ctypes_callbacks,
-        ],
-        post_rewriters=[
-            JuliaUnittestRewriter(),
-            JuliaMainRewriter(),
-            JuliaNestingRemoval(),
-            JuliaImportRewriter(),
-            JuliaGeneratorRewriter(),
-            JuliaOffsetArrayRewriter(),
-            JuliaIndexingRewriter(),
-            JuliaOrderedCollectionRewriter(),
-            JuliaCtypesRewriter(),
-            JuliaCtypesCallbackRewriter(),
-            JuliaArgumentParserRewriter(),
-            JuliaClassWrapper(),
-            JuliaMethodCallRewriter(),
-            JuliaAugAssignRewriter(),
-            JuliaBoolOpRewriter(),
-            VariableScopeRewriter(),
-            JuliaIORewriter(),
-            JuliaArbitraryPrecisionRewriter(),
-            JuliaContextManagerRewriter(),
-            JuliaExceptionRewriter(),
-            JuliaModuleRewriter(),
-        ],
-        optimization_rewriters=[
-            AlgebraicSimplification(), 
-            OperationOptimizer(), 
-            PerformanceOptimizations()],
-        inference = infer_julia_types
-    )
-
-
-def kotlin_settings(args, env=os.environ):
-    return LanguageSettings(
-        KotlinTranspiler(),
-        ".kt",
-        "Kotlin",
-        ["ktlint", "-F"],
-        rewriters=[KotlinBitOpRewriter()],
-        post_rewriters=[KotlinPrintRewriter()],
-        linter=["ktlint"],
-        inference = infer_kotlin_types
-    )
-
-
-def nim_settings(args, env=os.environ):
-    nim_args = {}
-    nimpretty_args = []
-    if args.indent is not None:
-        nim_args["indent"] = args.indent
-        nimpretty_args.append(f"--indent:{args.indent}")
-    return LanguageSettings(
-        NimTranspiler(**nim_args),
-        ".nim",
-        "Nim",
-        ["nimpretty", *nimpretty_args],
-        None,
-        [NimNoneCompareRewriter(), WithToBlockRewriter],
-        [infer_nim_types],
-    )
-
-
-def dart_settings(args, env=os.environ):
-    return LanguageSettings(
-        DartTranspiler(),
-        ".dart",
-        "Dart",
-        ["dart", "format"],
-        post_rewriters=[DartIntegerDivRewriter()],
-    )
-
-
-def go_settings(args, env=os.environ):
-    config_filename = "revive.toml"
-    if os.path.exists(CWD / config_filename):
-        revive_config = CWD / config_filename
-    elif os.path.exists(PY2MANY_DIR / config_filename):
-        revive_config = PY2MANY_DIR / config_filename
-    else:
-        revive_config = None
-    return LanguageSettings(
-        GoTranspiler(),
-        ".go",
-        "Go",
-        ["gofmt", "-w"],
-        None,
-        [GoNoneCompareRewriter(), GoVisibilityRewriter(), GoIfExpRewriter()],
-        [],
-        [GoMethodCallRewriter(), GoPropagateTypeAnnotation()],
-        linter=(
-            ["revive", "--config", str(revive_config)] if revive_config else ["revive"]
-        ),
-        inference = infer_go_types
-    )
-
-
-def vlang_settings(args, env=os.environ):
-    v_args = {}
-    vfmt_args = ["fmt", "-w"]
-    if args.indent is not None:
-        v_args["indent"] = args.indent
-        vfmt_args.append(f"--indent:{args.indent}")
-    return LanguageSettings(
-        VTranspiler(**v_args),
-        ".v",
-        "V",
-        ["v", *vfmt_args],
-        None,
-        [VNoneCompareRewriter(), VDictRewriter(), VComprehensionRewriter()],
-        [],
-        inference = infer_v_types
-    )
-
-
-def smt_settings(args, env=os.environ):
-    smt_args = {}
-    cljstyle_args = ["fix"]
-    return LanguageSettings(
-        SmtTranspiler(**smt_args),
-        ".smt",
-        "SMT",
-        ["cljstyle", *cljstyle_args],
-        None,
-        [],
-        [infer_smt_types],
-        inference = infer_smt_types
-    )
-
-
-def _get_all_settings(args, env=os.environ):
-    return {
-        "python": python_settings(args, env=env),
-        "cpp": cpp_settings(args, env=env),
-        "rust": rust_settings(args, env=env),
-        "julia": julia_settings(args, env=env),
-        "kotlin": kotlin_settings(args, env=env),
-        "nim": nim_settings(args, env=env),
-        "dart": dart_settings(args, env=env),
-        "go": go_settings(args, env=env),
-        "vlang": vlang_settings(args, env=env),
-        "smt": smt_settings(args, env=env),
-    }
+        # Check if files match
+        remove = string.whitespace
+        mapping = {ord(c): None for c in remove}
+        data: str = expected_data.translate(mapping)
+        contents: str = curr_file_data.translate(mapping)
+        return contents == data
 
 
 def _relative_to_cwd(absolute_path):
@@ -871,7 +506,7 @@ def _process_dir(
 
 def main(args=None, env=os.environ):
     parser = argparse.ArgumentParser()
-    LANGS = _get_all_settings(Mock(indent=4))
+    LANGS = _get_all_settings(FAKE_ARGS)
     for lang, settings in LANGS.items():
         parser.add_argument(
             f"--{lang}",
@@ -954,42 +589,20 @@ def main(args=None, env=os.environ):
         print("extension supported only with rust via pyo3")
         return -1
 
+    settings_func = ALL_SETTINGS["cpp"]
+    for lang, func in ALL_SETTINGS.items():
+        arg = getattr(args, lang)
+        if arg:
+            settings_func = func
+            break
+    settings = settings_func(args, env=env)
+
     if args.comment_unsupported:
         print("Wrapping unimplemented in comments")
-
-    if len(rest) == 0:
-        # Default is to consume stdin and write to stdout
-        rest = [STDIN]
-        args.outdir = STDOUT
+        settings.transpiler._throw_on_unimplemented = False
 
     for filename in rest:
         source = Path(filename)
-
-        settings = cpp_settings(args, env=env)
-        if args.cpp:
-            pass
-        if args.rust:
-            settings = rust_settings(args, env=env)
-        elif args.python:
-            settings = python_settings(args, env=env)
-        elif args.julia:
-            settings = julia_settings(args, env=env)
-        elif args.kotlin:
-            settings = kotlin_settings(args, env=env)
-        elif args.nim:
-            settings = nim_settings(args, env=env)
-        elif args.dart:
-            settings = dart_settings(args, env=env)
-        elif args.go:
-            settings = go_settings(args, env=env)
-        elif args.vlang:
-            settings = vlang_settings(args, env=env)
-        elif args.smt:
-            settings = smt_settings(args, env=env)
-
-        if args.comment_unsupported:
-            settings.transpiler._throw_on_unimplemented = False
-
         if args.outdir is None:
             outdir = source.parent
         else:

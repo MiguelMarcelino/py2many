@@ -212,6 +212,9 @@ class CppTranspiler(CLikeTranspiler):
 
         return funcdef + "\n" + body + "}\n"
 
+    def visit_Global(self, node) -> str:
+        return ""
+
     def visit_Attribute(self, node) -> str:
         attr = node.attr
         value_id = self.visit(node.value)
@@ -463,6 +466,7 @@ class CppTranspiler(CLikeTranspiler):
             and isinstance(node.op, ast.Mult)
             and isinstance(node.right, ast.Num)
         ):
+            self._usings.add("<vector>")
             return "std::vector ({0},{1})".format(
                 self.visit(node.right), self.visit(node.left.elts[0])
             )
@@ -617,6 +621,7 @@ class CppTranspiler(CLikeTranspiler):
             if element_type == self._default_type:
                 typename = decltype(node)
             else:
+                self._usings.add("<vector>")
                 typename = f"std::vector<{element_type}>"
         else:
             typename = self._typename_from_annotation(target)

@@ -245,7 +245,10 @@ class VariableTransformer(ast.NodeTransformer, ScopeMixin):
         return node
 
     def visit_AnnAssign(self, node):
-        self._generic_target_visit(node, node.target)
+        target = node.target
+        if isinstance(target, ast.Name):
+            target.assigned_from = node
+            self.scope.vars.append(target)
         return node
 
     def visit_AugAssign(self, node):
@@ -256,15 +259,7 @@ class VariableTransformer(ast.NodeTransformer, ScopeMixin):
         target.assigned_from = node
         if isinstance(target, ast.Name):
             self.scope.vars.append(target)
-        if isinstance(target, ast.Attribute):
-            if get_id(target.value) == "self":
-                self_var = ast.Name(id=target.attr)
-                self_var.target_node = target
-                self._class_vars.append(self_var)
-            else:
-                self_var = target
-        if isinstance(target, ast.Tuple) or isinstance(target, ast.List):
-            self.scope.vars.extend([t for t in target.elts])
+        return node
 
 
 class LHSAnnotationTransformer(ast.NodeTransformer):

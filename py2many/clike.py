@@ -115,7 +115,7 @@ def class_for_typename(typename: str, default_type, locals=None) -> Union[str, o
             # Method of an instance instead of a class.
             return getattr(typeclass.__self__.__class__, typeclass.__name__)
 
-        if not isinstance(typeclass, (type, type(open))):
+        if not isinstance(typeclass, (type, type(open), type(class_for_typename))):
             return typeclass.__class__
         return typeclass
     except (NameError, SyntaxError, AttributeError, TypeError):

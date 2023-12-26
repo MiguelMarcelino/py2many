@@ -10,6 +10,11 @@ from functools import lru_cache
 from pathlib import Path, PosixPath, WindowsPath
 from subprocess import run
 from typing import List, Optional, Set, Tuple
+from .pytype_inference import pytype_annotate_and_merge
+from .module_dependencies import analyse_module_dependencies
+from .input_configuration import parse_input_configurations, config_rewriters
+
+from .rewriters import LoopElseRewriter, UnitTestRewriter
 
 from .analysis import add_imports
 
@@ -17,8 +22,12 @@ from .context import add_assignment_context, add_variable_context, add_list_call
 from .exceptions import AstErrorBase
 from .inference import add_is_annotation, infer_types, infer_types_typpete
 from .language import LanguageSettings
-from .mutability_transformer import detect_mutable_vars
-from .nesting_transformer import detect_nesting_levels
+from .transformers import (
+    add_annotation_flags,
+    correct_node_attributes,
+    detect_mutable_vars,
+    detect_nesting_levels,
+)
 from .registry import _get_all_settings, ALL_SETTINGS, FAKE_ARGS
 from .scope import add_scope_context
 from .toposort_modules import toposort
@@ -69,8 +78,7 @@ def _transpile(
     target language
     """
     transpiler = settings.transpiler
-    inference = settings.inference \
-        if settings.inference else infer_types
+    inference = settings.inference if settings.inference else infer_types
     rewriters = settings.rewriters
     transformers = settings.transformers
     post_rewriters = settings.post_rewriters
@@ -81,7 +89,9 @@ def _transpile(
         # Pytype only parses code as string at the moment
         inferred_sources = []
         for filename, source in zip(filenames, sources):
-            inferred_sources.append(pytype_annotate_and_merge(source, basedir, filename))
+            inferred_sources.append(
+                pytype_annotate_and_merge(source, basedir, filename)
+            )
         sources = inferred_sources
 
     for filename, source in zip(filenames, sources):
@@ -89,9 +99,11 @@ def _transpile(
         tree.__file__ = filename
         tree.__basedir__ = basedir
         if args.import_basedir:
-            tree.import_basedir = WindowsPath(args.import_basedir) \
-                if sys.platform.startswith('win32') \
+            tree.import_basedir = (
+                WindowsPath(args.import_basedir)
+                if sys.platform.startswith("win32")
                 else PosixPath(args.import_basedir)
+            )
         tree_list.append(tree)
     # Analyse module dependencies
     trees = analyse_module_dependencies(tree_list)
@@ -207,7 +219,6 @@ def _transpile_one(
     tree = core_transformers(tree, trees, args)
     out = []
 
-
     transpile_output = transpiler.visit(tree)
     headers = transpiler.headers(infer_meta)
     if headers:
@@ -229,6 +240,7 @@ def _create_cmd(parts, filename, **kw):
         return cmd
     return [*parts, str(filename)]
 
+
 def _parse_expected(outputs, settings, args):
     """Check if files match the expected results"""
 
@@ -237,7 +249,7 @@ def _parse_expected(outputs, settings, args):
         dir_files = []
         for f in os.listdir(file_out):
             dir_files.append(f.split(".")[0])
-        for (f_name, path) in outputs:
+        for f_name, path in outputs:
             name: str = f_name.name.split(".")[0]
             if name in dir_files:
                 comp_res = _compare_file_contents(
@@ -259,7 +271,7 @@ def _parse_expected(outputs, settings, args):
         raise Exception(
             f"Could not parse expected files. {file_out} could not be found."
         )
-    
+
     def _compare_file_contents(file1_path, file2_path):
         """Compares file contents for equality"""
 
@@ -282,78 +294,79 @@ def _parse_expected(outputs, settings, args):
         contents: str = curr_file_data.translate(mapping)
         return contents == data
 
+    def _relative_to_cwd(absolute_path):
+        return Path(os.path.relpath(absolute_path, CWD))
 
-def _relative_to_cwd(absolute_path):
-    return Path(os.path.relpath(absolute_path, CWD))
+    def _get_output_path(filename, ext, outdir):
+        if filename.name == STDIN:
+            return Path(STDOUT)
+        directory = outdir / filename.parent
+        if not directory.is_dir():
+            directory.mkdir(parents=True)
+        output_path = directory / (filename.stem + ext)
+        if ext == ".kt" and output_path.is_absolute():
+            # KtLint does not support absolute path in globs
+            output_path = _relative_to_cwd(output_path)
+        return output_path
 
+    def _process_one(
+        settings: LanguageSettings, filename: Path, outdir: str, args, env
+    ):
+        """Transpile and reformat.
 
-def _get_output_path(filename, ext, outdir):
-    if filename.name == STDIN:
-        return Path(STDOUT)
-    directory = outdir / filename.parent
-    if not directory.is_dir():
-        directory.mkdir(parents=True)
-    output_path = directory / (filename.stem + ext)
-    if ext == ".kt" and output_path.is_absolute():
-        # KtLint does not support absolute path in globs
-        output_path = _relative_to_cwd(output_path)
-    return output_path
-
-
-def _process_one(settings: LanguageSettings, filename: Path, outdir: str, args, env):
-    """Transpile and reformat.
-
-    Returns False if reformatter failed.
-    """
-    suffix = f".{args.suffix}" if args.suffix is not None else settings.ext
-    output_path = _get_output_path(
-        filename.relative_to(filename.parent), suffix, outdir
-    )
-
-    if filename.name == STDIN:
-        # special case for simple pipes
-        output = _process_one_data(
-            sys.stdin.read(), Path("test.py"), settings, args, filename
+        Returns False if reformatter failed.
+        """
+        suffix = f".{args.suffix}" if args.suffix is not None else settings.ext
+        output_path = _get_output_path(
+            filename.relative_to(filename.parent), suffix, outdir
         )
-        tmp_name = None
-        try:
-            with tempfile.NamedTemporaryFile(suffix=settings.ext, delete=False) as f:
-                tmp_name = f.name
-                f.write(output.encode("utf-8"))
-            if _format_one(settings, tmp_name, env):
-                sys.stdout.write(open(tmp_name).read())
-            else:
-                sys.stderr.write("Formatting failed")
-        finally:
-            if tmp_name is not None:
-                os.remove(tmp_name)
-        return ({filename}, {filename})
 
-    if filename.resolve() == output_path.resolve() and not args.force:
-        print(f"Refusing to overwrite {filename}. Use --force to overwrite")
-        return False
+        if filename.name == STDIN:
+            # special case for simple pipes
+            output = _process_one_data(
+                sys.stdin.read(), Path("test.py"), settings, args, filename
+            )
+            tmp_name = None
+            try:
+                with tempfile.NamedTemporaryFile(
+                    suffix=settings.ext, delete=False
+                ) as f:
+                    tmp_name = f.name
+                    f.write(output.encode("utf-8"))
+                if _format_one(settings, tmp_name, env):
+                    sys.stdout.write(open(tmp_name).read())
+                else:
+                    sys.stderr.write("Formatting failed")
+            finally:
+                if tmp_name is not None:
+                    os.remove(tmp_name)
+            return ({filename}, {filename})
 
-    print(f"{filename} ... {output_path}")
-    with open(filename, encoding="utf-8") as f:
-        source_data = f.read()
-    dunder_init = filename.stem == "__init__"
-    if dunder_init and not source_data:
-        print("Detected empty __init__; skipping")
-        return True
-    result = _transpile([filename], [source_data], settings, args, basedir=filename)
-    with open(output_path, "w", encoding="utf-8") as f:
-        f.write(result[0][0])
+        if filename.resolve() == output_path.resolve() and not args.force:
+            print(f"Refusing to overwrite {filename}. Use --force to overwrite")
+            return False
 
-    format_res = False
-    if settings.formatter:
-        print("Formatting file")
-        format_res = _format_one(settings, output_path, env)
+        print(f"{filename} ... {output_path}")
+        with open(filename, encoding="utf-8") as f:
+            source_data = f.read()
+        dunder_init = filename.stem == "__init__"
+        if dunder_init and not source_data:
+            print("Detected empty __init__; skipping")
+            return True
+        result = _transpile([filename], [source_data], settings, args, basedir=filename)
+        with open(output_path, "w", encoding="utf-8") as f:
+            f.write(result[0][0])
 
-    # Compare with expected
-    if hasattr(args, "expected") and args.expected is not None:
-        _parse_expected([(filename, output_path)], settings, args)
+        format_res = False
+        if settings.formatter:
+            print("Formatting file")
+            format_res = _format_one(settings, output_path, env)
 
-    return format_res
+        # Compare with expected
+        if hasattr(args, "expected") and args.expected is not None:
+            _parse_expected([(filename, output_path)], settings, args)
+
+        return format_res
 
 
 def _format_one(settings, output_path, env=None):
@@ -574,7 +587,7 @@ def main(args=None, env=os.environ):
         default=None,
         help="Directory containing expected results for comparison",
     )
-    # Allows setting an import base directory for transpilation. 
+    # Allows setting an import base directory for transpilation.
     # Helps if the intent is to transpile part of a library.
     parser.add_argument(
         "--import-basedir",

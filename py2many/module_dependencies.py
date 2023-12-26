@@ -1,4 +1,3 @@
-
 import ast
 
 from py2many.helpers import is_dir
@@ -37,4 +36,3 @@ def analyse_module_dependencies(trees):
     if use_modules:
         for t in trees:
             t.use_modules = True
-    

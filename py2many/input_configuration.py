@@ -25,7 +25,7 @@ def parse_input_configurations(filename):
         raise Exception("Configuration file has to be a .ini file")
 
 
-class ConfigFileHandler():
+class ConfigFileHandler:
     def __init__(self, filename):
         self._config = configparser.ConfigParser()
         self._config.read(filename)
@@ -37,7 +37,7 @@ class ConfigFileHandler():
         if not self._config.has_section(section_name):
             # logger.warn(f"No section named {section_name} was found!")
             return None
-        
+
         section = self._config[section_name]
         if not self._config.has_option(section.name, option_name):
             # logger.warn(f"No option named {option_name} for section {section_name}!")
@@ -49,7 +49,7 @@ class ConfigFileHandler():
         if not self._config.has_section(section_name):
             # logger.warn(f"No section named {section_name} was found!")
             return None
-        
+
         return self._config[section_name]
 
     def get_option(self, section: configparser.SectionProxy, option_name):
@@ -70,14 +70,15 @@ class ConfigFileHandler():
         return self._parsed_defaults
 
 
-class ParseAnnotations():
+class ParseAnnotations:
     """Parses annotation files. If filename is None, it will look for generic annotations only"""
+
     def __init__(self, annotation_filename, filename=None):
         self._parsed_data = self.parse_file(annotation_filename, filename)
 
     def parse_file(self, annotation_filename, filename):
-        """Parses the data. If filename is present, it will get 
-           the data from the corresponding module"""
+        """Parses the data. If filename is present, it will get
+        the data from the corresponding module"""
         if annotation_filename is not None:
             _, file_extension = os.path.splitext(annotation_filename)
             input = Path(annotation_filename)
@@ -105,29 +106,32 @@ class ParseAnnotations():
 
             return module_config
 
-
     def get_attributes(self, node: ast.AST):
         node_field_map = {}
         name = get_id(node)
-        lookup_name = "functions" \
-            if type(node) == ast.FunctionDef else "classes"
+        lookup_name = "functions" if type(node) == ast.FunctionDef else "classes"
 
         # Get top level annotations
-        if (lookup_name in self._parsed_data 
-                and name in (general_funcs := self._parsed_data[lookup_name])):
+        if lookup_name in self._parsed_data and name in (
+            general_funcs := self._parsed_data[lookup_name]
+        ):
             node_field_map |= general_funcs
 
         # Get fields
         temp_dict = self._parsed_data
 
         for scope in node.scopes[1:]:
-            if isinstance(scope, ast.ClassDef) and \
-                    "classes" in temp_dict and \
-                    get_id(scope) in temp_dict["classes"]:
+            if (
+                isinstance(scope, ast.ClassDef)
+                and "classes" in temp_dict
+                and get_id(scope) in temp_dict["classes"]
+            ):
                 temp_dict = temp_dict["classes"][get_id(scope)]
-            if isinstance(scope, ast.FunctionDef) and \
-                    "functions" in temp_dict and \
-                    get_id(scope) in temp_dict["functions"]:
+            if (
+                isinstance(scope, ast.FunctionDef)
+                and "functions" in temp_dict
+                and get_id(scope) in temp_dict["functions"]
+            ):
                 temp_dict = temp_dict["functions"][get_id(scope)]
 
         if temp_dict and temp_dict != self._parsed_data:
@@ -147,7 +151,7 @@ def config_rewriters(config_handler: ConfigFileHandler, tree):
     for name, data in defaults.items():
         if name in PARSED_DISPATCH_MAP:
             PARSED_DISPATCH_MAP[name](tree, data)
-    # Specific for each file 
+    # Specific for each file
     filename = re.sub("(.*)\\.(.*)", "\\1", tree.__file__.name)
     if ann_sec := config_handler.get_sec_with_option("ANNOTATIONS", filename):
         parser = ParseAnnotations(ann_sec, filename)
@@ -193,7 +197,8 @@ class AnnotationRewriter(ast.NodeTransformer):
             node.decorator_list = list(set(node.decorator_list))
             # Transform in Name nodes
             node.decorator_list = list(
-                map(lambda dec: ast.Name(id=dec), node.decorator_list))
+                map(lambda dec: ast.Name(id=dec), node.decorator_list)
+            )
 
         if "args" in node_field_map:
             args_map = node_field_map["args"]
@@ -211,7 +216,8 @@ class AnnotationRewriter(ast.NodeTransformer):
             node.decorator_list = list(set(node.decorator_list))
             # Transform in Name nodes
             node.decorator_list = list(
-                map(lambda dec: ast.Name(id=dec), node.decorator_list))
+                map(lambda dec: ast.Name(id=dec), node.decorator_list)
+            )
 
         return node
 

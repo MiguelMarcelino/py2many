@@ -80,6 +80,7 @@ def is_list(node):
 ############################################
 # Added
 
+
 # Searches if a given name is associated to a class
 # object given a scope.
 def is_class_type(name, scopes):

@@ -5,7 +5,12 @@ from typing import Any
 
 from py2many.ast_helpers import get_id
 from py2many.helpers import get_ann_repr
-from pyjl.global_vars import FIX_SCOPE_BOUNDS, FLAG_DEFAULTS, LOOP_SCOPE_WARNING, OPTIMIZE_LOOP_RANGES
+from pyjl.global_vars import (
+    FIX_SCOPE_BOUNDS,
+    FLAG_DEFAULTS,
+    LOOP_SCOPE_WARNING,
+    OPTIMIZE_LOOP_RANGES,
+)
 
 logger = logging.Logger("pyjl")
 
@@ -56,7 +61,7 @@ class JuliaVariableScopeAnalysis(ast.NodeTransformer):
     def _emit_warning(self, node):
         if self._all_variables_out_of_scope:
             elems = []
-            for (target, _) in self._all_variables_out_of_scope:
+            for target, _ in self._all_variables_out_of_scope:
                 t_id = get_id(target)
                 elems.append(f"- {t_id} on linenumber {target.lineno}")
             elems_str = "\n".join(elems)

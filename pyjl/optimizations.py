@@ -89,6 +89,7 @@ class AlgebraicSimplification(ast.NodeTransformer):
         self.visit(node.right)
         return node
 
+
 class OperationOptimizer(ast.NodeTransformer):
     def __init__(self) -> None:
         super().__init__()
@@ -97,26 +98,36 @@ class OperationOptimizer(ast.NodeTransformer):
         # Visit call node, as JuliaAugAssignRewirter translates
         # augmented assignments into the corresponding Julia
         # functions
-        primitive_type = lambda n: \
-            re.match(r"^int|^float|^str", 
-            ast.unparse(getattr(node.scopes.find(get_id(n)), "annotation", ast.Name("")))) is not None
-        if isinstance(node.func, ast.Name) and \
-                get_id(node.func) == "append!" and \
-                isinstance(node.args[1], ast.List) and \
-                len(node.args[1].elts) == 1 and \
-                primitive_type(node.args[1].elts[0]):
+        primitive_type = (
+            lambda n: re.match(
+                r"^int|^float|^str",
+                ast.unparse(
+                    getattr(node.scopes.find(get_id(n)), "annotation", ast.Name(""))
+                ),
+            )
+            is not None
+        )
+        if (
+            isinstance(node.func, ast.Name)
+            and get_id(node.func) == "append!"
+            and isinstance(node.args[1], ast.List)
+            and len(node.args[1].elts) == 1
+            and primitive_type(node.args[1].elts[0])
+        ):
             node.func.id = "push!"
             node.args[1] = node.args[1].elts[0]
         return node
+
 
 class PerformanceOptimizations(ast.NodeTransformer):
     def __init__(self) -> None:
         super().__init__()
         self._use_global_constants = False
-    
+
     def visit_Module(self, node: ast.Module) -> Any:
-        self._use_global_constants = getattr(node, USE_GLOBAL_CONSTANTS, 
-            FLAG_DEFAULTS[USE_GLOBAL_CONSTANTS])
+        self._use_global_constants = getattr(
+            node, USE_GLOBAL_CONSTANTS, FLAG_DEFAULTS[USE_GLOBAL_CONSTANTS]
+        )
         self.generic_visit(node)
         return node
 
@@ -125,9 +136,11 @@ class PerformanceOptimizations(ast.NodeTransformer):
         target = get_id(node.targets[0])
         if self._use_global_constants:
             scopes = getattr(node, "scopes", None)
-            if scopes and isinstance(scopes[-1], ast.Module) and \
-                    len(node.targets) == 1 and \
-                    target not in scopes[-1].mutable_vars:
+            if (
+                scopes
+                and isinstance(scopes[-1], ast.Module)
+                and len(node.targets) == 1
+                and target not in scopes[-1].mutable_vars
+            ):
                 node.use_constant = True
         return node
-    

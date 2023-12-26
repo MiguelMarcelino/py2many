@@ -16,8 +16,11 @@ import ast
 import sys
 from typing import Callable, Dict, Tuple, Union
 
-class JuliaExternalModulePlugins():
-    def visit_winerror(self, node: ast.Call, vargs: list[str], kwargs: list[tuple[str,str]]):
+
+class JuliaExternalModulePlugins:
+    def visit_winerror(
+        self, node: ast.Call, vargs: list[str], kwargs: list[tuple[str, str]]
+    ):
         if vargs:
             return f"Base.windowserror({', '.join(vargs)})"
         elif getattr(node, "is_attr", None):
@@ -35,7 +38,7 @@ GENERIC_DISPATCH_TABLE: Dict[FuncType, Tuple[Callable, bool]] = {
     )
 }
 
-if sys.platform.startswith('win32'):
+if sys.platform.startswith("win32"):
     EXTERNAL_TYPE_MAP = {
         WindowsError: lambda self: "SystemError",
     }
@@ -50,6 +53,8 @@ if sys.platform.startswith('win32'):
         "WindowsError.strerror": lambda n, vargs, kwargs: f"{vargs[0]}.prefix",
     }
 
-    FUNC_DISPATCH_TABLE: Dict[FuncType, Tuple[Callable, bool]] = GENERIC_DISPATCH_TABLE | WIN_DISPATCH_TABLE
+    FUNC_DISPATCH_TABLE: Dict[FuncType, Tuple[Callable, bool]] = (
+        GENERIC_DISPATCH_TABLE | WIN_DISPATCH_TABLE
+    )
 else:
     FUNC_DISPATCH_TABLE: Dict[FuncType, Tuple[Callable, bool]] = GENERIC_DISPATCH_TABLE

@@ -105,7 +105,7 @@ def is_compatible(
     return True
 
 
-class FuncTypeDispatch():
+class FuncTypeDispatch:
     def visit_zip(self, node, vargs, kwargs):
         ann_ids = []
         for arg in node.args:
@@ -115,14 +115,14 @@ class FuncTypeDispatch():
                 if class_scope:
                     attr_node = class_scope.scopes.find(arg.attr)
                     if hasattr(attr_node, "target_node"):
-                        ann = getattr(attr_node.target_node, 'annotation', None)
+                        ann = getattr(attr_node.target_node, "annotation", None)
             else:
-                ann = getattr(node.scopes.find(arg_id), 'annotation', None)
+                ann = getattr(node.scopes.find(arg_id), "annotation", None)
             if ann:
                 ann_ids.append(unparse(ann))
             else:
                 ann_ids.append("Any")
-        
+
         return f"({', '.join(ann_ids)})"
 
     def visit_min_max(self, node, vargs, kwargs):
@@ -142,8 +142,10 @@ class FuncTypeDispatch():
             return ast.unparse(node_type.slice)
         return None
 
+
 class AnnotationVisitor(ast.NodeTransformer):
     """Add is_annotation attribute to all annotations"""
+
     def __init__(self) -> None:
         super().__init__()
         self._is_annotation = False
@@ -168,7 +170,7 @@ class AnnotationVisitor(ast.NodeTransformer):
             for n in node.elts:
                 n.is_annotation = True
         return node
-    
+
     def visit_Tuple(self, node: ast.Tuple) -> Any:
         self.generic_visit(node)
         if getattr(node, "is_annotation", False):
@@ -176,8 +178,10 @@ class AnnotationVisitor(ast.NodeTransformer):
                 n.is_annotation = True
         return node
 
+
 # TODO: Cross-Module support
 _class_attribute_types = {}
+
 
 class InferTypesTransformer(ast.NodeTransformer):
     """
@@ -305,9 +309,12 @@ class InferTypesTransformer(ast.NodeTransformer):
             if class_type and not hasattr(node, "self_type"):
                 node.self_type = get_id(class_type)
 
-        if len(node.body) > 0 and isinstance(node.body[-1], ast.Return) and \
-                hasattr(node.body[-1], "annotation") and \
-                node.returns == None:
+        if (
+            len(node.body) > 0
+            and isinstance(node.body[-1], ast.Return)
+            and hasattr(node.body[-1], "annotation")
+            and node.returns == None
+        ):
             node.returns = node.body[-1].annotation
 
         if node.name == "__getattr__" and class_type:
@@ -381,7 +388,7 @@ class InferTypesTransformer(ast.NodeTransformer):
             if not hasattr(node, "annotation"):
                 node.annotation = ast.Name(id=typename)
 
-    def _visit_container_elem_types(self, node, typename = "Any"):
+    def _visit_container_elem_types(self, node, typename="Any"):
         if elements := node.elts:
             elt_types: Set[str] = set()
             for e in elements:
@@ -397,10 +404,10 @@ class InferTypesTransformer(ast.NodeTransformer):
                 # Promotion
                 elt_1 = elt_types.pop()
                 elt_2 = elt_types.pop()
-                if (elt_1 == "int" and elt_2 == "float") or \
-                        (elt_2 == "int" and elt_1 == "float"):
+                if (elt_1 == "int" and elt_2 == "float") or (
+                    elt_2 == "int" and elt_1 == "float"
+                ):
                     self._annotate(node, f"{typename}[float]")
-
 
     def visit_Set(self, node):
         self.generic_visit(node)
@@ -467,7 +474,7 @@ class InferTypesTransformer(ast.NodeTransformer):
 
         if node.type_comment:
             # Propagate type-comment
-            annotation = ast.Name(id = node.type_comment)
+            annotation = ast.Name(id=node.type_comment)
             node.value.type_comment = node.type_comment
         else:
             annotation = getattr(node.value, "annotation", None)
@@ -489,11 +496,10 @@ class InferTypesTransformer(ast.NodeTransformer):
                 assign_ann = self._find_annotated_assign(node.value)
                 if assign_ann:
                     annotation = assign_ann
-                else: 
+                else:
                     return node
             else:
                 return node
-
 
         for target in node.targets:
             target_has_annotation = hasattr(target, "annotation")
@@ -502,9 +508,10 @@ class InferTypesTransformer(ast.NodeTransformer):
                 if target_has_annotation
                 else False
             )
-            if (not target_has_annotation or inferred):
-                if isinstance(target, ast.Attribute) and \
-                        (attr_lst := get_id(target).split(".")):
+            if not target_has_annotation or inferred:
+                if isinstance(target, ast.Attribute) and (
+                    attr_lst := get_id(target).split(".")
+                ):
                     if attr_lst[0] == "self":
                         class_node = find_node_by_type(ast.ClassDef, node.scopes)
                         cls_node = class_node.scopes.find(attr_lst[1])
@@ -519,7 +526,7 @@ class InferTypesTransformer(ast.NodeTransformer):
     def _find_annotated_assign(self, node):
         assign = node.scopes.find(get_id(node))
         if assign:
-            if (assign_ann := getattr(assign, "annotation", None)):
+            if assign_ann := getattr(assign, "annotation", None):
                 return assign_ann
             else:
                 if value := getattr(assign, "value", None):
@@ -568,7 +575,7 @@ class InferTypesTransformer(ast.NodeTransformer):
         )
         if new_type_str is None:
             return node
-        
+
         # Finds the closest node that is a function definition
         func_node = find_node_by_type(ast.FunctionDef, node.scopes)
         type_str = get_id(func_node.returns) if func_node else None
@@ -585,7 +592,6 @@ class InferTypesTransformer(ast.NodeTransformer):
                     func_node.returns.lifetime = lifetime
 
         return node
-
 
     def visit_UnaryOp(self, node):
         self.generic_visit(node)
@@ -645,8 +651,12 @@ class InferTypesTransformer(ast.NodeTransformer):
             return node
 
         # Both operands are annotated. Now we have interesting cases
-        left_id = get_id(left.value) if isinstance(left, ast.Subscript) else get_id(left)
-        right_id = get_id(right.value) if isinstance(right, ast.Subscript) else get_id(right)
+        left_id = (
+            get_id(left.value) if isinstance(left, ast.Subscript) else get_id(left)
+        )
+        right_id = (
+            get_id(right.value) if isinstance(right, ast.Subscript) else get_id(right)
+        )
 
         if left_id == right_id and left_id == "int":
             if not isinstance(node.op, ast.Div) or getattr(
@@ -698,19 +708,21 @@ class InferTypesTransformer(ast.NodeTransformer):
         if isinstance(node.op, ast.Mult):
             # Container multiplication
             if (left_id, right_id) in [
-                    ("bytes", "int"),
-                    ("str", "int"),
-                    ("tuple", "int"),
-                    ("List", "int"),
-                    ("int", "bool")]:
+                ("bytes", "int"),
+                ("str", "int"),
+                ("tuple", "int"),
+                ("List", "int"),
+                ("int", "bool"),
+            ]:
                 node.annotation = ast.Name(id=left_id)
                 return node
             elif (left_id, right_id) in [
-                    ("int", "bytes"),
-                    ("int", "str"),
-                    ("int", "tuple"),
-                    ("int", "List"),
-                    ("bool", "int")]:
+                ("int", "bytes"),
+                ("int", "str"),
+                ("int", "tuple"),
+                ("int", "List"),
+                ("bool", "int"),
+            ]:
                 node.annotation = ast.Name(id=right_id)
                 return node
 
@@ -732,15 +744,19 @@ class InferTypesTransformer(ast.NodeTransformer):
                     node.annotation = _class_attribute_types[ann]
             if value_id == "self":
                 class_node = find_node_by_type(ast.ClassDef, node.scopes)
-                attr_node = getattr(class_node.scopes.find(node.attr), "target_node", None) \
-                    if hasattr(class_node, "scopes") else None
+                attr_node = (
+                    getattr(class_node.scopes.find(node.attr), "target_node", None)
+                    if hasattr(class_node, "scopes")
+                    else None
+                )
                 if ann := getattr(attr_node, "annotation", None):
                     node.annotation = ann
                 elif hasattr(attr_node, "assigned_from"):
                     ann = None
                     assigned_from = attr_node.assigned_from
-                    if isinstance(assigned_from, ast.Assign) and \
-                            (ann := getattr(assigned_from.targets[0], "annotation", None)):
+                    if isinstance(assigned_from, ast.Assign) and (
+                        ann := getattr(assigned_from.targets[0], "annotation", None)
+                    ):
                         node.annotation = ann
                     elif isinstance(assigned_from, ast.AnnAssign):
                         node.annotation = assigned_from.annotation
@@ -768,12 +784,13 @@ class InferTypesTransformer(ast.NodeTransformer):
                     lifetime = getattr(fn.returns, "lifetime", None)
                     if lifetime is not None:
                         node.annotation.lifetime = lifetime
-            elif fname in self.TYPE_DICT.values() or \
-                    fname in self.CONTAINER_TYPE_DICT.values():
+            elif (
+                fname in self.TYPE_DICT.values()
+                or fname in self.CONTAINER_TYPE_DICT.values()
+            ):
                 node.annotation = ast.Name(id=fname)
 
-            if (func := self._clike._func_for_lookup(fname)) \
-                    in self.FUNC_TYPE_MAP:
+            if (func := self._clike._func_for_lookup(fname)) in self.FUNC_TYPE_MAP:
                 ann = self.FUNC_TYPE_MAP[func](self, node, node.args, node.keywords)
                 if ann:
                     self._annotate(node, ann)
@@ -782,14 +799,14 @@ class InferTypesTransformer(ast.NodeTransformer):
                 parse_ann = lambda x: x.value if isinstance(x, ast.Subscript) else x
                 if isinstance(node.func, ast.Attribute):
                     ann = parse_ann(getattr(node.func.value, "annotation", None))
-                    func_name = f"{unparse(ann)}.{node.func.attr}" \
-                        if ann else None
+                    func_name = f"{unparse(ann)}.{node.func.attr}" if ann else None
                 else:
                     ann = parse_ann(getattr(node.func, "annotation", None))
                     func_name = unparse(ann) if ann else None
                 # Try to match to table entries
-                if (func := self._clike._func_for_lookup(func_name)) \
-                        in self.FUNC_TYPE_MAP:
+                if (
+                    func := self._clike._func_for_lookup(func_name)
+                ) in self.FUNC_TYPE_MAP:
                     ann = self.FUNC_TYPE_MAP[func](self, node, node.args, node.keywords)
                     if ann:
                         self._annotate(node, ann)
@@ -800,8 +817,9 @@ class InferTypesTransformer(ast.NodeTransformer):
         definition = node.value
         if hasattr(definition, "annotation"):
             self._clike._typename_from_annotation(definition)
-            if hasattr(definition, "container_type") and \
-                    not isinstance(node.slice, ast.Slice):
+            if hasattr(definition, "container_type") and not isinstance(
+                node.slice, ast.Slice
+            ):
                 container_type, element_type = definition.container_type
                 if container_type[0] == "Dict" or isinstance(element_type, list):
                     element_type = element_type[1]
@@ -821,8 +839,9 @@ class InferTypesTransformer(ast.NodeTransformer):
                 typ = ast.Name(id=self._clike._slice_value(node.iter.annotation))
                 if isinstance(node.target, ast.Name):
                     node.target.annotation = typ
-                elif isinstance(node.target, ast.Tuple) and \
-                        isinstance(typ, ast.Subscript):
+                elif isinstance(node.target, ast.Tuple) and isinstance(
+                    typ, ast.Subscript
+                ):
                     typ = self._clike._slice_value(typ)
                     if isinstance(typ, ast.Tuple):
                         for e, ann in zip(node.target.elts, typ.elts):
@@ -830,17 +849,21 @@ class InferTypesTransformer(ast.NodeTransformer):
                     else:
                         for e in node.target.elts:
                             e.annotation = typ
-            elif isinstance(node.iter.annotation, ast.Tuple) and \
-                    isinstance(node.target, ast.Tuple):
+            elif isinstance(node.iter.annotation, ast.Tuple) and isinstance(
+                node.target, ast.Tuple
+            ):
                 for elt, ann in zip(node.target.elts, node.iter.annotation.elts):
-                    if isinstance(ann, ast.Subscript) and \
-                            re.match(r"list|List|tuple|Tuple", get_id(ann.value)):
+                    if isinstance(ann, ast.Subscript) and re.match(
+                        r"list|List|tuple|Tuple", get_id(ann.value)
+                    ):
                         elt.annotation = ann.slice
                     else:
                         elt.annotation = ann
-            elif isinstance(node.iter, ast.Call) and \
-                    get_id(node.iter.func) == "range" and \
-                    isinstance(node.target, ast.Name):
+            elif (
+                isinstance(node.iter, ast.Call)
+                and get_id(node.iter.func) == "range"
+                and isinstance(node.target, ast.Name)
+            ):
                 self._annotate(node.target, "int")
         self.generic_visit(node)
         return node
@@ -905,7 +928,7 @@ class InferTypesTransformer(ast.NodeTransformer):
 
         for gen in node.generators:
             gen_iter = self.visit(gen.iter)
-            if (ann := getattr(gen_iter, "annotation", None)):
+            if ann := getattr(gen_iter, "annotation", None):
                 comp_ann = ann.slice if isinstance(ann, ast.Subscript) else ann
                 if isinstance(gen.target, ast.Name):
                     self._block_annotations[get_id(gen.target)] = comp_ann
@@ -922,28 +945,28 @@ class InferTypesTransformer(ast.NodeTransformer):
             # If body has the Optional's type, as None is falsy
             ann = get_inferred_type(node.test)
             self._visit_val_branch(node, ann, get_id(node.test))
-        elif isinstance(node.test, ast.UnaryOp) and \
-                isinstance(node.test.op, ast.Not):
+        elif isinstance(node.test, ast.UnaryOp) and isinstance(node.test.op, ast.Not):
             # If body value has None type, as None is falsy
             ann = get_inferred_type(node.test.operand)
             self._visit_none_branch(node, ann, get_id(node.test.operand))
-        elif isinstance(node.test, ast.BinOp) and \
-                isinstance(node.test.right, ast.Constant) and \
-                node.test.right.value is None:
-            # Cover comparison with "None" value 
+        elif (
+            isinstance(node.test, ast.BinOp)
+            and isinstance(node.test.right, ast.Constant)
+            and node.test.right.value is None
+        ):
+            # Cover comparison with "None" value
             ann = get_inferred_type(node.test.left)
-            if isinstance(node.test.op, ast.IsNot) or \
-                    isinstance(node.test.op, ast.NotEq):
+            if isinstance(node.test.op, ast.IsNot) or isinstance(
+                node.test.op, ast.NotEq
+            ):
                 self._visit_val_branch(node, ann, get_id(node.test.left))
-            elif isinstance(node.test.op, ast.Is) or \
-                    isinstance(node.test.op, ast.Eq):
+            elif isinstance(node.test.op, ast.Is) or isinstance(node.test.op, ast.Eq):
                 self._visit_none_branch(node, ann, get_id(node.test.left))
         elif isinstance(node.test, ast.BoolOp):
             prev_block_annotations = self._block_annotations
             if isinstance(node.test.op, ast.And):
                 for val in node.test.values:
-                    if isinstance(val, ast.Call) and \
-                            get_id(val.func) == "isinstance":
+                    if isinstance(val, ast.Call) and get_id(val.func) == "isinstance":
                         if id := get_id(val.args[0]):
                             self._block_annotations[id] = val.args[1]
             self.generic_visit(node)
@@ -988,8 +1011,7 @@ class InferTypesTransformer(ast.NodeTransformer):
 
     def _is_optional(self, annotation):
         is_optional = lambda x: get_id(x) == "Optional"
-        return isinstance(annotation, ast.Subscript) and \
-                is_optional(annotation.value)
+        return isinstance(annotation, ast.Subscript) and is_optional(annotation.value)
 
     def visit_Yield(self, node: ast.Yield) -> Any:
         self.generic_visit(node)
@@ -1002,8 +1024,7 @@ class InferTypesTransformer(ast.NodeTransformer):
         return node
 
     def visit_ExceptHandler(self, node: ast.ExceptHandler) -> Any:
-        if getattr(node, "name", None) and \
-                isinstance(node.type, ast.Name):
+        if getattr(node, "name", None) and isinstance(node.type, ast.Name):
             self._block_annotations[node.name] = ast.Name(id=get_id(node.type))
             self.generic_visit(node)
             self._block_annotations.clear()
@@ -1013,9 +1034,11 @@ class InferTypesTransformer(ast.NodeTransformer):
         prev_block_anns = self._block_annotations
         for it in node.items:
             self.visit(it)
-            if it.optional_vars and \
-                    (opt_id := get_id(it.optional_vars)) and \
-                    (ann := getattr(it.context_expr, "annotation", None)):
+            if (
+                it.optional_vars
+                and (opt_id := get_id(it.optional_vars))
+                and (ann := getattr(it.context_expr, "annotation", None))
+            ):
                 self._block_annotations[opt_id] = ann
         for n in node.body:
             self.visit(n)

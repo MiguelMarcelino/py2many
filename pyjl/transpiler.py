@@ -25,19 +25,27 @@ from .plugins import (
 from py2many.analysis import get_id, is_void_function
 from py2many.declaration_extractor import DeclarationExtractor
 from py2many.clike import _AUTO_INVOKED
-from py2many.tracer import find_in_body, find_node_by_name_and_type, find_node_by_type, find_parent_of_type, get_class_scope, is_class_or_module, is_class_type
+from py2many.tracer import (
+    find_in_body,
+    find_node_by_name_and_type,
+    find_node_by_type,
+    find_parent_of_type,
+    get_class_scope,
+    is_class_or_module,
+    is_class_type,
+)
 
 from typing import Any, List, Union
 
 SPECIAL_CHARACTER_MAP = {
-    "\a": "\\a", 
+    "\a": "\\a",
     "\b": "\\b",
-    "\f": "\\f", 
-    "\r": "\\r", 
-    "\v": "\\v", 
+    "\f": "\\f",
+    "\r": "\\r",
+    "\v": "\\v",
     "\t": "\\t",
-    "\xe9":"\\xe9",
-    "\000":"\\000",
+    "\xe9": "\\xe9",
+    "\000": "\\000",
     "\xff": "\\xff",
     "\x00": "\\x00",
     "\0": "\\0",
@@ -50,20 +58,18 @@ SPECIAL_CHARACTER_MAP = {
 }
 
 # For now just includes SPECIAL_CHARACTER_MAP
-DOCSTRING_TRANSLATION_MAP = SPECIAL_CHARACTER_MAP 
+DOCSTRING_TRANSLATION_MAP = SPECIAL_CHARACTER_MAP
 
 STR_SPECIAL_CHARACTER_MAP = SPECIAL_CHARACTER_MAP | {
-    "\"": "\\\"",
-    "\'": "\\\'",
+    '"': '\\"',
+    "'": "\\'",
     "\\": "\\\\",
     "$": "\\$",
-    "\n": "\\n"
+    "\n": "\\n",
 }
 
-BYTES_SPECIAL_CHARACTER_MAP = SPECIAL_CHARACTER_MAP | {
-    "\"": "\\\"",
-    "\n": "\\n"
-}
+BYTES_SPECIAL_CHARACTER_MAP = SPECIAL_CHARACTER_MAP | {'"': '\\"', "\n": "\\n"}
+
 
 class JuliaTranspiler(CLikeTranspiler):
     NAME = "julia"
@@ -81,7 +87,7 @@ class JuliaTranspiler(CLikeTranspiler):
         ast.BitOr: "__or__",
         ast.BitAnd: "__and__",
         ast.BitXor: "__xor__",
-        ast.Pow: "__pow__"
+        ast.Pow: "__pow__",
     }
 
     def __init__(self, jl_func_list):
@@ -105,31 +111,40 @@ class JuliaTranspiler(CLikeTranspiler):
 
     def visit_Name(self, node: ast.Name) -> str:
         node_id = get_id(node)
-        if getattr(node, "is_annotation", False) or \
-                (not getattr(node, "lhs", False) and
-                    hasattr(node, "scopes") and
-                    not node.scopes.find(node_id) and 
-                    not getattr(node, "in_call", None) and
-                    self._map_type(node_id) != node_id):
+        if getattr(node, "is_annotation", False) or (
+            not getattr(node, "lhs", False)
+            and hasattr(node, "scopes")
+            and not node.scopes.find(node_id)
+            and not getattr(node, "in_call", None)
+            and self._map_type(node_id) != node_id
+        ):
             return self._map_type(node_id)
-        elif node_id in self._julia_keywords and \
-                not getattr(node, "preserve_keyword", False):
+        elif node_id in self._julia_keywords and not getattr(
+            node, "preserve_keyword", False
+        ):
             return f"{node_id}_"
-        elif hasattr(node, "lineno") and \
-                hasattr(node, "scopes") and \
-                node_id in self._julia_function_names and \
-                not getattr(node, "preserve_keyword", False) and \
-                node.scopes.find(node_id) and \
-                not isinstance(node.scopes.find(node_id), (ast.FunctionDef, ast.ClassDef)) and \
-                not isinstance(getattr(node.scopes.find(node_id), "assigned_from", None), ast.FunctionDef):
-            # Verify if any names override Julia's 
+        elif (
+            hasattr(node, "lineno")
+            and hasattr(node, "scopes")
+            and node_id in self._julia_function_names
+            and not getattr(node, "preserve_keyword", False)
+            and node.scopes.find(node_id)
+            and not isinstance(
+                node.scopes.find(node_id), (ast.FunctionDef, ast.ClassDef)
+            )
+            and not isinstance(
+                getattr(node.scopes.find(node_id), "assigned_from", None),
+                ast.FunctionDef,
+            )
+        ):
+            # Verify if any names override Julia's
             # built-in function names
             return f"{node_id}_"
         elif node_id in self._special_names_dispatch_table:
             return self._special_names_dispatch_table[node_id]
         return super().visit_Name(node)
 
-    def visit_Constant(self, node: ast.Constant, quotes = True, docstring = False) -> str:
+    def visit_Constant(self, node: ast.Constant, quotes=True, docstring=False) -> str:
         if node.value is True:
             return "true"
         elif node.value is False:
@@ -146,17 +161,18 @@ class JuliaTranspiler(CLikeTranspiler):
         elif isinstance(node.value, complex):
             str_value = str(node.value)
             return (
-                str_value.replace("j", "im") if str_value.endswith(
-                    "j") else str_value
+                str_value.replace("j", "im") if str_value.endswith("j") else str_value
             )
         else:
             return super().visit_Constant(node)
 
-    def visit_Str(self, node: ast.Str, quotes = True, docstring = False) -> str:
+    def visit_Str(self, node: ast.Str, quotes=True, docstring=False) -> str:
         # Escape special characters
-        trs_map = self._str_special_character_map \
-            if not docstring \
+        trs_map = (
+            self._str_special_character_map
+            if not docstring
             else self._docstr_special_character_map
+        )
         node_str = node.value.translate(str.maketrans(trs_map))
         # node_str = node.value.encode("UTF-8").decode("ascii", "backslashreplace") # Avoid special characters
         return f'"{node_str}"' if quotes else node_str
@@ -165,7 +181,7 @@ class JuliaTranspiler(CLikeTranspiler):
         bytes_str: str = str(node.s)
         content = bytes_str[2:-1]
         bytes_str = content.translate(str.maketrans(self._bytes_special_character_map))
-        return f"b\"{bytes_str}\""
+        return f'b"{bytes_str}"'
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> str:
         typedecls = []
@@ -182,8 +198,9 @@ class JuliaTranspiler(CLikeTranspiler):
             for g in self._generics:
                 if verify_types(ann, g):
                     func_generics.add(g)
-        node.maybe_generics = f"where {', '.join(func_generics)}" \
-            if func_generics else ""
+        node.maybe_generics = (
+            f"where {', '.join(func_generics)}" if func_generics else ""
+        )
 
         # Parse return type
         return_type = ""
@@ -201,8 +218,7 @@ class JuliaTranspiler(CLikeTranspiler):
         node.template = template
 
         # Change functions that have the same name as modules
-        if self._use_modules and \
-                node.name == self._module:
+        if self._use_modules and node.name == self._module:
             node.name = f"{node.name}_"
 
         # Visit special functions:
@@ -210,12 +226,14 @@ class JuliaTranspiler(CLikeTranspiler):
             return JULIA_SPECIAL_FUNCTIONS[node.name](self, node)
 
         # Visit decorators
-        for ((d_id, _), decorator) in zip(node.parsed_decorators.items(), node.decorator_list):
+        for (d_id, _), decorator in zip(
+            node.parsed_decorators.items(), node.decorator_list
+        ):
             if d_id in DECORATOR_DISPATCH_TABLE:
                 ret = DECORATOR_DISPATCH_TABLE[d_id](self, node, decorator)
                 if ret is not None:
                     return ret
-        
+
         # Visit function body
         docstring_parsed: str = self._get_docstring(node)
         body = [docstring_parsed] if docstring_parsed else []
@@ -223,8 +241,10 @@ class JuliaTranspiler(CLikeTranspiler):
         body = "\n".join(body)
         if body == "...":
             body = ""
-        
-        funcdef = f"function {node.name}{template}({args}){return_type}{node.maybe_generics}"
+
+        funcdef = (
+            f"function {node.name}{template}({args}){return_type}{node.maybe_generics}"
+        )
         return f"{funcdef}\n{body}\nend\n"
 
     def _get_args(self, node) -> list[str]:
@@ -232,14 +252,16 @@ class JuliaTranspiler(CLikeTranspiler):
         args_list = []
 
         # Get self type. Only avoid if:
-        #  - _oop_nested_funcs is being used, as the @oodef macro will do it automatically. 
+        #  - _oop_nested_funcs is being used, as the @oodef macro will do it automatically.
         #  - the "classmethod" decorator is used
-        if len(typenames) > 0 and \
-                (not typenames[0] or typenames[0] == self._default_type) and \
-                hasattr(node, "self_type") and \
-                not getattr(node, "_oop_nested_funcs", False) and \
-                "classmethod" not in node.parsed_decorators and \
-                "staticmethod" not in node.parsed_decorators:
+        if (
+            len(typenames) > 0
+            and (not typenames[0] or typenames[0] == self._default_type)
+            and hasattr(node, "self_type")
+            and not getattr(node, "_oop_nested_funcs", False)
+            and "classmethod" not in node.parsed_decorators
+            and "staticmethod" not in node.parsed_decorators
+        ):
             if getattr(node, "oop", False):
                 typenames[0] = f"@like({node.self_type})"
             else:
@@ -269,7 +291,11 @@ class JuliaTranspiler(CLikeTranspiler):
 
             arg_signature = ""
             if arg_typename and arg_typename != self._default_type:
-                arg_signature = f"{arg}::{arg_typename}" if default is None else f"{arg}::{arg_typename} = {default}"
+                arg_signature = (
+                    f"{arg}::{arg_typename}"
+                    if default is None
+                    else f"{arg}::{arg_typename} = {default}"
+                )
             else:
                 arg_signature = f"{arg}" if default is None else f"{arg} = {default}"
             args_list.append(arg_signature)
@@ -277,7 +303,7 @@ class JuliaTranspiler(CLikeTranspiler):
         if node.args.vararg:
             _, arg = self.visit(node.args.vararg)
             args_list.append(f"{arg}...")
-        
+
         return args_list
 
     def visit_Return(self, node) -> str:
@@ -294,15 +320,22 @@ class JuliaTranspiler(CLikeTranspiler):
 
     def visit_Attribute(self, node) -> str:
         # Account for any attributes referring to variables
-        attr = f"{node.attr}_" \
-            if ((node.attr in self._julia_function_names and 
-                    node.scopes.find(node.attr)) or
-                node.attr in self._julia_keywords) \
+        attr = (
+            f"{node.attr}_"
+            if (
+                (
+                    node.attr in self._julia_function_names
+                    and node.scopes.find(node.attr)
+                )
+                or node.attr in self._julia_keywords
+            )
             else node.attr
+        )
         value_id = self.visit(node.value)
 
-        if (dispatch := getattr(node, "dispatch", None)) and \
-                not getattr(node, "in_call", None):
+        if (dispatch := getattr(node, "dispatch", None)) and not getattr(
+            node, "in_call", None
+        ):
             dispatch.func.preserve_keyword = True
             fname = self.visit(dispatch.func)
             vargs, _ = self._get_call_args(dispatch)
@@ -312,13 +345,14 @@ class JuliaTranspiler(CLikeTranspiler):
 
         if not value_id:
             value_id = ""
-        
-        # If node is an is_annotation or it is not on lhs 
+
+        # If node is an is_annotation or it is not on lhs
         # and is not a variable, it can be mapped
-        if getattr(node, "is_annotation", False) or \
-                (not getattr(node, "lhs", False) and 
-                    hasattr(node, "scopes") and 
-                    not node.scopes.find(f"{value_id}.{attr}")):
+        if getattr(node, "is_annotation", False) or (
+            not getattr(node, "lhs", False)
+            and hasattr(node, "scopes")
+            and not node.scopes.find(f"{value_id}.{attr}")
+        ):
             return self._map_type(f"{value_id}.{attr}")
 
         return f"{value_id}.{attr}"
@@ -327,8 +361,7 @@ class JuliaTranspiler(CLikeTranspiler):
         node.func.in_call = True
         # Change functions that have the same name as modules
         fname = self.visit(node.func)
-        if self._use_modules and \
-                fname == self._module:
+        if self._use_modules and fname == self._module:
             fname = f"{fname}_"
         vargs, kwargs = self._get_call_args(node)
 
@@ -346,23 +379,32 @@ class JuliaTranspiler(CLikeTranspiler):
         # Check if first arg is of class type.
         # If it is, search for the function in the class scope
         fndef = node.scopes.find(fname)
-        if vargs and (arg_cls_scope := find_node_by_name_and_type(vargs[0], ast.ClassDef, node.scopes)[0]):
+        if vargs and (
+            arg_cls_scope := find_node_by_name_and_type(
+                vargs[0], ast.ClassDef, node.scopes
+            )[0]
+        ):
             fndef = arg_cls_scope.scopes.find(fname)
 
-        if fndef and hasattr(fndef, "args") and \
-                getattr(fndef.args, "args", None):
+        if fndef and hasattr(fndef, "args") and getattr(fndef.args, "args", None):
             fndef_args = fndef.args.args
-            if "staticmethod" in getattr(fndef, "parsed_decorators", {}) and \
-                    len(vargs) > len(fndef_args):
+            if "staticmethod" in getattr(fndef, "parsed_decorators", {}) and len(
+                vargs
+            ) > len(fndef_args):
                 # Compensate for self argument
                 fndef_args = [ast.arg(arg="self")] + fndef_args
             converted = []
             for varg, fnarg, node_arg in zip(vargs, fndef_args, node.args):
                 actual_type = self._typename_from_annotation(node_arg)
                 declared_type = self._typename_from_annotation(fnarg)
-                if declared_type and actual_type and declared_type != self._default_type \
-                        and actual_type != self._default_type and actual_type != declared_type and \
-                        not actual_type.startswith("Optional"): # TODO: Skip conversion of Optional for now
+                if (
+                    declared_type
+                    and actual_type
+                    and declared_type != self._default_type
+                    and actual_type != self._default_type
+                    and actual_type != declared_type
+                    and not actual_type.startswith("Optional")
+                ):  # TODO: Skip conversion of Optional for now
                     converted.append(f"convert({declared_type}, {varg})")
                 else:
                     converted.append(varg)
@@ -480,29 +522,33 @@ class JuliaTranspiler(CLikeTranspiler):
     def visit_BinOp(self, node: ast.BinOp) -> str:
         # Attempts to find node annotations
         left_jl_ann: str = self._typename_from_type_node(
-            self._get_annotation(node.left), 
-            default=self._default_type)
+            self._get_annotation(node.left), default=self._default_type
+        )
         right_jl_ann: str = self._typename_from_type_node(
-            self._get_annotation(node.right), 
-            default=self._default_type)
+            self._get_annotation(node.right), default=self._default_type
+        )
 
         is_list = lambda x: re.match(r"^Array|^Vector", x)
         is_tuple = lambda x: re.match(r"^Tuple", x)
         is_num = lambda x: re.match(r"^Int|^Float", x)
 
         # Modulo string formatting
-        if isinstance(node.left, ast.Constant) and \
-                isinstance(node.left.value, str) and \
-                isinstance(node.op, ast.Mod):
+        if (
+            isinstance(node.left, ast.Constant)
+            and isinstance(node.left.value, str)
+            and isinstance(node.op, ast.Mod)
+        ):
             left = self.visit_Constant(node.left, quotes=False)
-            # (?<!%) -> Negative lookbehind (ensures that parsing 
+            # (?<!%) -> Negative lookbehind (ensures that parsing
             # does not consider "%%"" instances)
-            split_str: list[str] = re.split(r"(?<!%)%\w|(?<!%)%.\d\w|(?<!%)%-\d\d\w", left)
+            split_str: list[str] = re.split(
+                r"(?<!%)%\w|(?<!%)%.\d\w|(?<!%)%-\d\d\w", left
+            )
             elts = getattr(node.right, "elts", [node.right])
-            for i in range(len(split_str)-1):
+            for i in range(len(split_str) - 1):
                 e = elts[i]
                 if isinstance(e, ast.Constant):
-                    split_str[i] += self.visit_Constant(e,quotes=False)
+                    split_str[i] += self.visit_Constant(e, quotes=False)
                 else:
                     split_str[i] += f"$({self.visit(e)})"
             return f"\"{''.join(split_str)}\""
@@ -522,50 +568,59 @@ class JuliaTranspiler(CLikeTranspiler):
                 return f"{op}({right}, {left})"
             elif left.startswith("self"):
                 # Prevent infinite recursion
-                if node.scopes.find(new_op) and \
-                        not (isinstance(node.scopes[-1], ast.FunctionDef) and
-                        node.scopes[-1].name == new_op):
+                if node.scopes.find(new_op) and not (
+                    isinstance(node.scopes[-1], ast.FunctionDef)
+                    and node.scopes[-1].name == new_op
+                ):
                     # special methods expect the instance itself
                     return f"{new_op}(self, {right})"
 
         if isinstance(node.op, ast.Mult):
             # Cover multiplication between List/Tuple and Int
             if isinstance(node.right, ast.Num) or is_num(right_jl_ann):
-                if isinstance(node.left, ast.List) and \
-                        len(node.left.elts) == 1:
+                if isinstance(node.left, ast.List) and len(node.left.elts) == 1:
                     return f"fill({self.visit(node.left.elts[0])},{right})"
-                elif ((isinstance(node.left, ast.List) or is_list(left_jl_ann))  or
-                        (isinstance(node.left, ast.Str) or left_jl_ann == "String")):
+                elif (isinstance(node.left, ast.List) or is_list(left_jl_ann)) or (
+                    isinstance(node.left, ast.Str) or left_jl_ann == "String"
+                ):
                     return f"repeat({left},{right})"
                 elif isinstance(node.left, ast.Tuple) or is_tuple(left_jl_ann):
                     return f"repeat([{left}...],{right})"
 
             if isinstance(node.left, ast.Num) or is_num(left_jl_ann):
-                if isinstance(node.right, ast.List) and \
-                        len(node.right.elts) == 1:
+                if isinstance(node.right, ast.List) and len(node.right.elts) == 1:
                     return f"fill({self.visit(node.right.elts[0])},{left})"
-                elif ((isinstance(node.right, ast.List) or is_list(right_jl_ann)) or
-                        (isinstance(node.right, ast.Str) or right_jl_ann == "String")):
+                elif (isinstance(node.right, ast.List) or is_list(right_jl_ann)) or (
+                    isinstance(node.right, ast.Str) or right_jl_ann == "String"
+                ):
                     return f"repeat({right},{left})"
                 elif isinstance(node.right, ast.Tuple) or is_tuple(right_jl_ann):
                     return f"repeat([{right}...],{left})"
 
             # Cover Python Int and Boolean multiplication (also supported in Julia)
-            if (((isinstance(node.right, ast.Num) or right_jl_ann in self._julia_num_types)
-                    and (isinstance(node.left, ast.BoolOp) or left_jl_ann == "Bool")) or
-                    ((isinstance(node.left, ast.Num) or left_jl_ann in self._julia_num_types)
-                     and (isinstance(node.right, ast.BoolOp) or right_jl_ann == "Bool"))):
+            if (
+                (
+                    isinstance(node.right, ast.Num)
+                    or right_jl_ann in self._julia_num_types
+                )
+                and (isinstance(node.left, ast.BoolOp) or left_jl_ann == "Bool")
+            ) or (
+                (isinstance(node.left, ast.Num) or left_jl_ann in self._julia_num_types)
+                and (isinstance(node.right, ast.BoolOp) or right_jl_ann == "Bool")
+            ):
                 return f"{left}*{right}"
 
         if isinstance(node.op, ast.Add):
             # Add two lists
-            if ((isinstance(node.right, ast.List) and isinstance(node.left, ast.List))
-                    or (is_list(right_jl_ann) and is_list(left_jl_ann))):
+            if (
+                isinstance(node.right, ast.List) and isinstance(node.left, ast.List)
+            ) or (is_list(right_jl_ann) and is_list(left_jl_ann)):
                 return f"[{left}; {right}]"
 
             # Cover Python String concatenation
-            if ((isinstance(node.right, ast.Str) and isinstance(node.left, ast.Str))
-                    or (right_jl_ann == "String" and left_jl_ann == "String")):
+            if (isinstance(node.right, ast.Str) and isinstance(node.left, ast.Str)) or (
+                right_jl_ann == "String" and left_jl_ann == "String"
+            ):
                 return f"{left} * {right}"
 
         # By default, call super
@@ -578,8 +633,9 @@ class JuliaTranspiler(CLikeTranspiler):
             return node.annotation
         elif hasattr(n_inst, "annotation"):
             return n_inst.annotation
-        elif hasattr(n_inst, "assigned_from") and \
-                hasattr(n_inst.assigned_from, "annotation"):
+        elif hasattr(n_inst, "assigned_from") and hasattr(
+            n_inst.assigned_from, "annotation"
+        ):
             return n_inst.assigned_from.annotation
         return None
 
@@ -592,10 +648,11 @@ class JuliaTranspiler(CLikeTranspiler):
     def visit_ClassDef(self, node: ast.ClassDef) -> str:
         dec_ids = node.parsed_decorators.keys()
         # Check validity of function translation
-        if OOP_CLASS in dec_ids and \
-                JL_CLASS in dec_ids:
-            raise AstUnsupportedOperation("Cannot invoke a class using both "
-                "ObjectOriented.jl and Classes.jl", node)
+        if OOP_CLASS in dec_ids and JL_CLASS in dec_ids:
+            raise AstUnsupportedOperation(
+                "Cannot invoke a class using both " "ObjectOriented.jl and Classes.jl",
+                node,
+            )
 
         # Extract declarations
         extractor = DeclarationExtractor(self)
@@ -622,7 +679,9 @@ class JuliaTranspiler(CLikeTranspiler):
             return ret
 
         # Visit decorators
-        for ((d_id, _), decorator) in zip(node.parsed_decorators.items(), node.decorator_list):
+        for (d_id, _), decorator in zip(
+            node.parsed_decorators.items(), node.decorator_list
+        ):
             if d_id in DECORATOR_DISPATCH_TABLE:
                 dec_ret = DECORATOR_DISPATCH_TABLE[d_id](self, node, decorator)
                 if dec_ret:
@@ -632,21 +691,30 @@ class JuliaTranspiler(CLikeTranspiler):
         for base in node.jl_bases:
             bases.append(self.visit(base))
         # Build struct definition
-        struct_def = f"mutable struct {node.name} <: {', '.join(bases)}" \
-            if bases else f"mutable struct {node.name}"
+        struct_def = (
+            f"mutable struct {node.name} <: {', '.join(bases)}"
+            if bases
+            else f"mutable struct {node.name}"
+        )
 
         docstring = self._get_docstring(node)
         maybe_docstring = f"{docstring}\n" if docstring else ""
-        maybe_constructor = f"\n{self.visit(node.constructor)}" if getattr(node, "constructor", None) else ""
+        maybe_constructor = (
+            f"\n{self.visit(node.constructor)}"
+            if getattr(node, "constructor", None)
+            else ""
+        )
 
         return f"{struct_def}\n{maybe_docstring}{node.fields_str}{maybe_constructor}\nend\n{body}"
 
     def _visit_class_fields(self, node: ast.ClassDef):
         declarations: dict[str, (str, Any)] = node.declarations_with_defaults
 
-        if JL_CLASS not in node.parsed_decorators and \
-                OOP_CLASS not in node.parsed_decorators:
-            # If we are using composition and the class extends from super, 
+        if (
+            JL_CLASS not in node.parsed_decorators
+            and OOP_CLASS not in node.parsed_decorators
+        ):
+            # If we are using composition and the class extends from super,
             # it must contain its fields as well.
             for cls in node.bases:
                 base_node = node.scopes.find(get_id(cls))
@@ -663,20 +731,27 @@ class JuliaTranspiler(CLikeTranspiler):
             # Cover any class assignments
             for name, value in node.class_assignments.items():
                 scopes = getattr(value, "scopes", None)
-                if scopes and isinstance(scopes[-1], ast.ClassDef) and \
-                        name not in declarations:
+                if (
+                    scopes
+                    and isinstance(scopes[-1], ast.ClassDef)
+                    and name not in declarations
+                ):
                     typename = getattr(value, "annotation", None)
                     typename = self.visit(typename) if typename else None
                     items.append((name, (typename, value)))
             # Check if there are default values
             has_defaults = any(list(map(lambda x: x[1][1] is not None, items)))
             # Reorganize fields, so that defaults are last
-            dec_items = sorted(items, key = lambda x: (x[1][1] != None, x), reverse=False) \
-                if has_defaults \
+            dec_items = (
+                sorted(items, key=lambda x: (x[1][1] != None, x), reverse=False)
+                if has_defaults
                 else items
+            )
         else:
             # Sort args according to constructor
-            init_args = node.constructor_args.args if hasattr(node, "constructor_args") else []
+            init_args = (
+                node.constructor_args.args if hasattr(node, "constructor_args") else []
+            )
             args_str = []
             for arg in init_args:
                 arg_str = arg.arg
@@ -684,8 +759,9 @@ class JuliaTranspiler(CLikeTranspiler):
                 if arg_str in declarations:
                     typename, default = declarations[arg_str]
                     # Attempt to propagate types
-                    if (not typename or typename == self._default_type) and \
-                            (arg_ann := getattr(arg, "annotation", None)):
+                    if (not typename or typename == self._default_type) and (
+                        arg_ann := getattr(arg, "annotation", None)
+                    ):
                         typename = self.visit(arg_ann)
                     dec_items.append((arg_str, (typename, default)))
             # Add leftover args
@@ -693,9 +769,11 @@ class JuliaTranspiler(CLikeTranspiler):
                 if name not in args_str:
                     dec_items.append((name, (typename, default)))
 
-        check_reserved_names = lambda item: (f"{item[0]}_", item[1]) \
-            if (item[0] in self._julia_function_names) \
+        check_reserved_names = (
+            lambda item: (f"{item[0]}_", item[1])
+            if (item[0] in self._julia_function_names)
             else (item[0], item[1])
+        )
 
         dec_items = list(map(check_reserved_names, dec_items))
 
@@ -713,16 +791,18 @@ class JuliaTranspiler(CLikeTranspiler):
                 typename = f"Abstract{typename}"
 
             decs.append(declaration)
-            fields_str.append(declaration 
-                if (not typename or (typename and typename == self._default_type)) 
-                else f"{declaration}::{typename}")
-            
+            fields_str.append(
+                declaration
+                if (not typename or (typename and typename == self._default_type))
+                else f"{declaration}::{typename}"
+            )
+
             # Default field values
             fields.append((declaration, typename, default))
 
         if not hasattr(node, "constructor_args") and has_defaults:
             node.constructor = self._build_constructor(node, dec_items)
-  
+
         node.fields = fields
         node.fields_str = "\n".join(fields_str)
 
@@ -731,29 +811,36 @@ class JuliaTranspiler(CLikeTranspiler):
         assigns = []
         declarations = []
         for declaration, (typename, default_node) in dec_items:
-            args.args.append(ast.arg(arg=declaration, annotation = ast.Name(id=typename)))
-            if isinstance(default_node, ast.Name) and \
-                    not node.scopes.find(get_id(default_node)):
+            args.args.append(ast.arg(arg=declaration, annotation=ast.Name(id=typename)))
+            if isinstance(default_node, ast.Name) and not node.scopes.find(
+                get_id(default_node)
+            ):
                 args.defaults.append(ast.Constant(value=None))
             else:
                 args.defaults.append(default_node)
             declarations.append(ast.Name(id=declaration))
-            assigns.append(ast.Assign(targets=[ast.Name(id=declaration)], value = ast.Name(id=declaration)))
+            assigns.append(
+                ast.Assign(
+                    targets=[ast.Name(id=declaration)], value=ast.Name(id=declaration)
+                )
+            )
         is_oop = OOP_CLASS in node.parsed_decorators
         if is_oop:
             constructor = ast.FunctionDef(
-                name = "new", args = args, body = [],
+                name="new",
+                args=args,
+                body=[],
             )
         else:
             constructor = juliaAst.Constructor(
-                name = node.name, args = args, body = [],
+                name=node.name,
+                args=args,
+                body=[],
             )
         constructor.body = assigns
         obj_builder = ast.Call(
-            func=ast.Name(id="new"), 
-            args=declarations, 
-            keywords=[], 
-            scopes=ScopeList())
+            func=ast.Name(id="new"), args=declarations, keywords=[], scopes=ScopeList()
+        )
         ast.fix_missing_locations(obj_builder)
         constructor.body.append(obj_builder)
         constructor.scopes = node.scopes
@@ -792,7 +879,7 @@ class JuliaTranspiler(CLikeTranspiler):
         return f"@se {node.name} begin\n{field_str}\nend\n"
 
     def _import(self, name: str, alias: str) -> str:
-        '''Formatting import'''
+        """Formatting import"""
         self._usings.add("FromFile: @from")
         import_str = self._get_file_import(name)
         if import_str:
@@ -808,14 +895,16 @@ class JuliaTranspiler(CLikeTranspiler):
         import_str = f"import {name}"
         return f"{import_str} as {alias}" if alias else import_str
 
-    def _import_from(self, module_name: str, names: List[tuple[str, str]], level: int = 0) -> str:
-        '''Formatting import from'''
+    def _import_from(
+        self, module_name: str, names: List[tuple[str, str]], level: int = 0
+    ) -> str:
+        """Formatting import from"""
         self._usings.add("FromFile: @from")
         if module_name == ".":
             import_names = []
             for n in names:
                 name = n[0]
-                import_names.append(f"@from \"{name}.jl\" using {name}")
+                import_names.append(f'@from "{name}.jl" using {name}')
             return "\n".join(import_names)
 
         include_stmts = []
@@ -823,7 +912,7 @@ class JuliaTranspiler(CLikeTranspiler):
             dirs = "../" * (level - 1)
             imp_names = self._retrieve_import_names(names)
             module_name = "/".join(module_name.split("."))
-            import_str = f"@from \"{dirs}{module_name}.jl\" using {module_name}"
+            import_str = f'@from "{dirs}{module_name}.jl" using {module_name}'
             if imp_names:
                 return f"{import_str}: {', '.join(imp_names)}"
             return import_str
@@ -843,8 +932,7 @@ class JuliaTranspiler(CLikeTranspiler):
                         import_names.append(name)
             init_imp = self._get_file_import(f"{module_name}.__init__")
             if import_names:
-                include_stmts.append(f"{init_imp}: " + \
-                    f"{', '.join(import_names)}")
+                include_stmts.append(f"{init_imp}: " + f"{', '.join(import_names)}")
             return "\n".join(include_stmts)
         elif is_file(module_name, self._basedir):
             imp_str = self._get_file_import(module_name)
@@ -857,7 +945,7 @@ class JuliaTranspiler(CLikeTranspiler):
             names = self._retrieve_import_names(names)
             jl_module_name = module_name
             if module_name in MODULE_DISPATCH_TABLE:
-                jl_module_name =  MODULE_DISPATCH_TABLE[module_name]
+                jl_module_name = MODULE_DISPATCH_TABLE[module_name]
             if names:
                 return f"using {jl_module_name}: {', '.join(names)}"
             return f"using {jl_module_name}"
@@ -872,17 +960,19 @@ class JuliaTranspiler(CLikeTranspiler):
         return import_names
 
     def _get_file_import(self, name: str):
-        """Check if name is a path to a file and returns 
+        """Check if name is a path to a file and returns
         the resulting import string if it succeeds"""
-        if (id_mod := is_file(name, self._basedir)) or \
-                (is_path := is_dir(name, self._basedir)):
+        if (id_mod := is_file(name, self._basedir)) or (
+            is_path := is_dir(name, self._basedir)
+        ):
             # Find path from current file
             sep = "/"
             extension = ".jl" if id_mod else "/__init__.jl"
             import_path = name.split(".")
             # Rewrite __init__ module names
-            mod_name = import_path[-2] \
-                if import_path[-1] == "__init__" else import_path[-1]
+            mod_name = (
+                import_path[-2] if import_path[-1] == "__init__" else import_path[-1]
+            )
             out_filepath = self._filename.as_posix().split("/")[:-1]
             # Handle cases where out_filepath contains basedir parts
             base_dir_split = self._basedir.as_posix().split("/")
@@ -898,12 +988,14 @@ class JuliaTranspiler(CLikeTranspiler):
                     # We want the root directory
                     rev_path = "../" * len(out_filepath)
                     parsed_path = sep.join(import_path)
-                    return f'@from \"{rev_path}{parsed_path}{extension}\" using {mod_name}'
+                    return (
+                        f'@from "{rev_path}{parsed_path}{extension}" using {mod_name}'
+                    )
 
             if out_filepath == import_path[:-1]:
                 # Shortcut if paths are the same
-                return f'@from \"{import_path[-1]}{extension}\" using {mod_name}'
-            i, j = - 1, - 1
+                return f'@from "{import_path[-1]}{extension}" using {mod_name}'
+            i, j = -1, -1
             rev_cnt = 0
             while i >= -len(import_path) and j >= -len(out_filepath):
                 if import_path[i] != out_filepath[j]:
@@ -915,20 +1007,16 @@ class JuliaTranspiler(CLikeTranspiler):
                 # Get relative path from current file
                 rev_path = "../" * rev_cnt
                 parsed_path = sep.join(import_path)
-                return f'@from \"{rev_path}{parsed_path}{extension}\" using {mod_name}'
-            return f'@from \"{sep.join(import_path)}{extension}\" using {mod_name}'
+                return f'@from "{rev_path}{parsed_path}{extension}" using {mod_name}'
+            return f'@from "{sep.join(import_path)}{extension}" using {mod_name}'
         return None
 
-    def visit_List(self, node:ast.List) -> str:
+    def visit_List(self, node: ast.List) -> str:
         elts = self._parse_elts(node)
         if hasattr(node, "is_annotation"):
             return f"{{{elts}}}"
-        return (
-            f"({elts})"
-            if hasattr(node, "lhs") and node.lhs
-            else f"[{elts}]"
-        )
-    
+        return f"({elts})" if hasattr(node, "lhs") and node.lhs else f"[{elts}]"
+
     def visit_Tuple(self, node: ast.Tuple) -> str:
         elts = self._parse_elts(node)
         if hasattr(node, "is_annotation"):
@@ -936,7 +1024,7 @@ class JuliaTranspiler(CLikeTranspiler):
         if len(node.elts) == 1:
             return f"({elts},)"
         return f"({elts})"
-    
+
     def _parse_elts(self, node):
         elts = []
         for e in node.elts:
@@ -954,7 +1042,7 @@ class JuliaTranspiler(CLikeTranspiler):
 
     def visit_Dict(self, node) -> str:
         kv_pairs = []
-        for key, value in zip (node.keys, node.values):
+        for key, value in zip(node.keys, node.values):
             if key:
                 kv_pairs.append(f"{self.visit(key)} => {self.visit(value)}")
             else:
@@ -964,12 +1052,10 @@ class JuliaTranspiler(CLikeTranspiler):
 
         # Get the annotation
         maybe_ann = ""
-        if hasattr(node, "annotation") and \
-                isinstance(node.annotation, ast.Subscript):
+        if hasattr(node, "annotation") and isinstance(node.annotation, ast.Subscript):
             # node.annotation.slice.is_annotation = True
             maybe_ann = f"{{{self.visit(node.annotation.slice)}}}"
-        if not maybe_ann and \
-                hasattr(node, "container_type"):
+        if not maybe_ann and hasattr(node, "container_type"):
             maybe_ann = f"{{{node.container_type[1]}}}"
         return f"Dict{maybe_ann}({kv_pairs})"
 
@@ -998,14 +1084,14 @@ class JuliaTranspiler(CLikeTranspiler):
 
         if getattr(node, "step", None):
             step = self.visit(node.step)
-            if isinstance(node.step, ast.UnaryOp) and \
-                    isinstance(node.step.op, ast.USub):
+            if isinstance(node.step, ast.UnaryOp) and isinstance(
+                node.step.op, ast.USub
+            ):
                 return f"{upper}:{step}:{lower}"
             else:
                 return f"{lower}:{step}:{upper}"
 
         return f"{lower}:{upper}"
-
 
     def visit_Ellipsis(self, node: ast.Ellipsis) -> str:
         return "..."
@@ -1034,7 +1120,9 @@ class JuliaTranspiler(CLikeTranspiler):
         if node.type:
             if self._is_pycall_exception:
                 type_str = self._map_type(self.visit(node.type))
-                buf.append(f"if {name} isa PyCall.PyError && pybuiltin(:issubclass)({name}.T, py\"{type_str}\")")
+                buf.append(
+                    f'if {name} isa PyCall.PyError && pybuiltin(:issubclass)({name}.T, py"{type_str}")'
+                )
             else:
                 type_str = self._map_type(self.visit(node.type))
                 buf.append(f"if {name} isa {type_str}")
@@ -1058,11 +1146,12 @@ class JuliaTranspiler(CLikeTranspiler):
         val = None
         if node.value is not None:
             val = self.visit(node.value)
-        
+
         parent_scope = node.scopes[-1]
-        if (isinstance(parent_scope, ast.Module) or 
-                getattr(parent_scope, "is_python_main", False)) and \
-                not self._allow_annotations_on_globals:
+        if (
+            isinstance(parent_scope, ast.Module)
+            or getattr(parent_scope, "is_python_main", False)
+        ) and not self._allow_annotations_on_globals:
             type_str = None
 
         if val:
@@ -1085,37 +1174,47 @@ class JuliaTranspiler(CLikeTranspiler):
             if op_type in self.SPECIAL_METHOD_TABLE:
                 new_op: str = f"{self.SPECIAL_METHOD_TABLE[op_type]}"
                 aug_op = f"__i{new_op.removeprefix('__')}"
-                if find_in_body(class_node.body, lambda x: 
-                        isinstance(x, ast.FunctionDef) and x.name == aug_op):
+                if find_in_body(
+                    class_node.body,
+                    lambda x: isinstance(x, ast.FunctionDef) and x.name == aug_op,
+                ):
                     return f"{target} = {aug_op}({target}, {val})"
                 else:
                     # Fallback to normal operation
                     return f"{target} = {new_op}({target}, {val})"
         return "{0} {1}= {2}".format(target, op, val)
-    
+
     def visit_Assign(self, node: ast.Assign) -> str:
         if (val := self._generic_assign_visit(node, node.targets[0])) == "":
             return val
 
         value = self.visit(node.value)
         if len(node.targets) == 1:
-            if (target := self.visit(node.targets[0])) in JULIA_SPECIAL_ASSIGNMENT_DISPATCH_TABLE:
-                return JULIA_SPECIAL_ASSIGNMENT_DISPATCH_TABLE[target](self, node, value)
+            if (
+                target := self.visit(node.targets[0])
+            ) in JULIA_SPECIAL_ASSIGNMENT_DISPATCH_TABLE:
+                return JULIA_SPECIAL_ASSIGNMENT_DISPATCH_TABLE[target](
+                    self, node, value
+                )
 
         # Allow inferred annotations on assignments
         parent_scope = node.scopes[-1]
-        no_globals = (isinstance(parent_scope, ast.Module) or 
-                getattr(parent_scope, "is_python_main", False)) and \
-                not self._allow_annotations_on_globals
+        no_globals = (
+            isinstance(parent_scope, ast.Module)
+            or getattr(parent_scope, "is_python_main", False)
+        ) and not self._allow_annotations_on_globals
         targets = []
         for t in node.targets:
-            if hasattr(t, "annotation") and not no_globals and \
-                    not isinstance(t, ast.Tuple) and \
-                    getattr(t, "make_generic", None):
+            if (
+                hasattr(t, "annotation")
+                and not no_globals
+                and not isinstance(t, ast.Tuple)
+                and getattr(t, "make_generic", None)
+            ):
                 targets.append(f"{self.visit(t)}::{self.visit(t.annotation)}")
             else:
                 targets.append(self.visit(t))
-        
+
         if value == None:
             value = self._none_type
 
@@ -1130,8 +1229,7 @@ class JuliaTranspiler(CLikeTranspiler):
                 if ann == "HLiteral":
                     value = hex(value)
 
-        op = f".=" if getattr(node, "broadcast", False) \
-            else "="
+        op = f".=" if getattr(node, "broadcast", False) else "="
 
         # Optimization to use global constants
         if getattr(node, "use_constant", None):
@@ -1145,10 +1243,11 @@ class JuliaTranspiler(CLikeTranspiler):
 
     def _generic_assign_visit(self, node: Union[ast.AnnAssign, ast.Assign], target):
         # Removing special TypeVar nodes
-        if isinstance(node.value, ast.Call) and \
-                get_id(node.value.func) == "TypeVar":
-            if isinstance(node.value.args[0], ast.Constant) and \
-                    node.value.args[0].value not in self._reserved_typevars:
+        if isinstance(node.value, ast.Call) and get_id(node.value.func) == "TypeVar":
+            if (
+                isinstance(node.value.args[0], ast.Constant)
+                and node.value.args[0].value not in self._reserved_typevars
+            ):
                 self._generics.append(get_id(target))
             return ""
         return None
@@ -1173,13 +1272,17 @@ class JuliaTranspiler(CLikeTranspiler):
             if type_ann and (ann_str := self.visit(type_ann)):
                 if isinstance(t, ast.Subscript):
                     if ann_str.startswith("Dict"):
-                        del_targets.append(f"delete!({node_name}, {self.visit(t.slice)})")
+                        del_targets.append(
+                            f"delete!({node_name}, {self.visit(t.slice)})"
+                        )
                     elif ann_str.startswith("Vector") or ann_str.startswith("Array"):
-                        del_targets.append(f"deleteat!({node_name}, {self.visit(t.slice)})")
+                        del_targets.append(
+                            f"deleteat!({node_name}, {self.visit(t.slice)})"
+                        )
 
         if not del_targets:
             del_targets.extend(["# Delete Unsupported", f"# del({node_name})"])
-        
+
         return "\n".join(del_targets)
 
     def visit_Raise(self, node) -> str:
@@ -1192,8 +1295,8 @@ class JuliaTranspiler(CLikeTranspiler):
     def visit_Await(self, node) -> str:
         return f"wait({self.visit(node.value)})"
 
-    def visit_AsyncFunctionDef(self, node:ast.AsyncFunctionDef) -> str:
-        # Parse function args       
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> str:
+        # Parse function args
         args_list = self._get_args(node)
         args = ", ".join(args_list)
 
@@ -1212,26 +1315,28 @@ class JuliaTranspiler(CLikeTranspiler):
         if func_scope:
             if "contextlib.contextmanager" in func_scope.parsed_decorators:
                 # Using DataTypesBasic package
-                # If there is no value, use the default set by 
+                # If there is no value, use the default set by
                 #   "visit_contextmanager" in "pyjl/plugins"
-                return f"res = cont({self.visit(node.value)})" \
-                    if node.value \
-                    else "res = cont()" 
+                return (
+                    f"res = cont({self.visit(node.value)})"
+                    if node.value
+                    else "res = cont()"
+                )
             if RESUMABLE in func_scope.parsed_decorators:
                 # Using resumables package
-                return f"@yield {self.visit(node.value)}" \
-                    if node.value \
-                    else "@yield"
+                return f"@yield {self.visit(node.value)}" if node.value else "@yield"
             else:
                 if node.value:
                     return f"put!(ch_{func_scope.name}, {self.visit(node.value)})"
                 else:
                     if getattr(node, "is_lambda_body", False):
                         raise AstUnsupportedOperation(
-                            "yield cannot be used withing anonymous functions", node)
+                            "yield cannot be used withing anonymous functions", node
+                        )
                     else:
                         raise AstUnsupportedOperation(
-                                "yield requires a value when using channels", node)
+                            "yield requires a value when using channels", node
+                        )
 
     def visit_YieldFrom(self, node: ast.YieldFrom) -> str:
         # Currently not supported
@@ -1260,8 +1365,7 @@ class JuliaTranspiler(CLikeTranspiler):
         key = self.visit(node.key)
         value = self.visit(node.value)
         generators = node.generators
-        dict_comp = (f"{key} => {value} " +
-                     self._visit_generators(generators))
+        dict_comp = f"{key} => {value} " + self._visit_generators(generators)
 
         return f"Dict({dict_comp})"
 
@@ -1272,16 +1376,18 @@ class JuliaTranspiler(CLikeTranspiler):
             target = self.visit(generator.target)
             iter = self.visit(generator.iter)
             exp = f"for {target} in {iter}"
-            gen_exp.append(exp) \
-                if i == 0 \
-                else gen_exp.append(f" {exp}")
+            gen_exp.append(exp) if i == 0 else gen_exp.append(f" {exp}")
             filter_str = []
-            if(len(generator.ifs) == 1):
+            if len(generator.ifs) == 1:
                 filter_str.append(f" if {self.visit(generator.ifs[0])} ")
             else:
                 for i in range(0, len(generator.ifs)):
                     gen_if = generator.ifs[i]
-                    filter_str.append(f" if {self.visit(gen_if)}" if i == 0 else f" && {self.visit(gen_if)} ")
+                    filter_str.append(
+                        f" if {self.visit(gen_if)}"
+                        if i == 0
+                        else f" && {self.visit(gen_if)} "
+                    )
             gen_exp.extend(filter_str)
 
         return "".join(gen_exp)
@@ -1328,7 +1434,7 @@ class JuliaTranspiler(CLikeTranspiler):
             if re.match(r".[\d]*", f_spec_val):
                 f_spec_split = f_spec_val.split(".")
                 if len(f_spec_split) > 1:
-                    f_spec_parsed = f_spec_split[1].replace("\"", "")
+                    f_spec_parsed = f_spec_split[1].replace('"', "")
                 else:
                     f_spec_parsed = f_spec_val
                 return f"round({value}, digits={f_spec_parsed})"
@@ -1341,7 +1447,7 @@ class JuliaTranspiler(CLikeTranspiler):
         body = [self.visit(n) for n in node.body]
         body = "\n".join(body)
         return f"{items} \n{body}\nend"
-    
+
     def visit_withitem(self, node: ast.withitem) -> Any:
         cntx_data = self.visit(node.context_expr)
         if hasattr(node, "optional_vars") and node.optional_vars:
@@ -1366,9 +1472,11 @@ class JuliaTranspiler(CLikeTranspiler):
         extends = None
         if node.extends is not None:
             extends = self.visit(node.extends)
-        return (f"abstract type Abstract{name} end"
-                if extends is None
-                else f"abstract type Abstract{name} <: {extends} end")
+        return (
+            f"abstract type Abstract{name} end"
+            if extends is None
+            else f"abstract type Abstract{name} <: {extends} end"
+        )
 
     def visit_LetStmt(self, node: juliaAst.LetStmt) -> Any:
         args = [self.visit(arg) for arg in node.args]
@@ -1385,9 +1493,11 @@ class JuliaTranspiler(CLikeTranspiler):
     def visit_JuliaModule(self, node: juliaAst.JuliaModule) -> Any:
         body = self.visit_Module(node)
         mod_name = self.visit(node.name)
-        parent_dir = self._filename.parent.stem \
-            if self._filename.parent.stem \
+        parent_dir = (
+            self._filename.parent.stem
+            if self._filename.parent.stem
             else self._basedir.stem
+        )
         if mod_name == "__init__" and parent_dir:
             return f"module {parent_dir}\n{body}\nend"
         return f"module {mod_name}\n{body}\nend"
@@ -1395,13 +1505,13 @@ class JuliaTranspiler(CLikeTranspiler):
     def visit_OrderedDict(self, node: juliaAst.OrderedDict):
         self._usings.add("OrderedCollections")
         kv_pairs = []
-        for key, value in zip (node.keys, node.values):
+        for key, value in zip(node.keys, node.values):
             if key:
                 kv_pairs.append(f"{self.visit(key)} => {self.visit(value)}")
             else:
                 if isinstance(value, ast.Dict):
                     kv_pairs.append(f"{self.visit(value)}...")
-        
+
         kv_pairs = ", ".join(kv_pairs)
         return f"OrderedDict({kv_pairs})"
 
@@ -1410,8 +1520,7 @@ class JuliaTranspiler(CLikeTranspiler):
         key = self.visit(node.key)
         value = self.visit(node.value)
         generators = node.generators
-        dict_comp = (f"{key} => {value} " +
-                     self._visit_generators(generators))
+        dict_comp = f"{key} => {value} " + self._visit_generators(generators)
 
         return f"OrderedDict({dict_comp})"
 
@@ -1433,8 +1542,11 @@ class JuliaTranspiler(CLikeTranspiler):
         body.extend([self.visit(n) for n in node.body])
         body = "\n".join(body)
 
-        if len(node.body) == 1 and isinstance(node.body[0], ast.Call) \
-                and get_id(node.body[0].func) == "new":
+        if (
+            len(node.body) == 1
+            and isinstance(node.body[0], ast.Call)
+            and get_id(node.body[0].func) == "new"
+        ):
             return f"{node.name}({args_str}) = {body}"
         else:
             return f"""{node.name}({args_str}) = begin
@@ -1447,7 +1559,9 @@ class JuliaTranspiler(CLikeTranspiler):
             body.append(self.visit(n))
         body = "\n".join(body)
         if getattr(node, "decorator_list", None):
-            decorators = " ".join(list(map(lambda x: f"@{self.visit(x)}", node.decorator_list)))
+            decorators = " ".join(
+                list(map(lambda x: f"@{self.visit(x)}", node.decorator_list))
+            )
             return f"{decorators} {node.name} begin\n{body}\nend"
         block_type = getattr(node, "block_type", None)
         if block_type == "expression_block":

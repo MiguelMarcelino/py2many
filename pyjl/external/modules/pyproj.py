@@ -11,8 +11,11 @@ from typing import Callable, Dict, Tuple, Union
 
 FuncType = Union[Callable, str]
 
-class JuliaExternalModulePlugins():
-    def visit_proj(self, node: ast.Call, vargs: list[str], kwargs: list[tuple[str,str]]):
+
+class JuliaExternalModulePlugins:
+    def visit_proj(
+        self, node: ast.Call, vargs: list[str], kwargs: list[tuple[str, str]]
+    ):
         pycall_import(self, node, "pyproj")
         kwargs_str = [f"{kw[0]}={kw[1]}" for kw in kwargs]
         if not vargs and not kwargs:
@@ -21,10 +24,12 @@ class JuliaExternalModulePlugins():
             return f"pyproj.Proj({', '.join(kwargs_str)})"
         return f"pyproj.Proj({', '.join(vargs)}, {', '.join(kwargs_str)})"
 
-    def visit_transform(self, node: ast.Call, vargs: list[str], kwargs: list[tuple[str,str]]):
+    def visit_transform(
+        self, node: ast.Call, vargs: list[str], kwargs: list[tuple[str, str]]
+    ):
         pycall_import(self, node, "pyproj")
-        return f"pyproj.transform({', '.join(vargs)})" \
-            if vargs else "pyproj.transform"
+        return f"pyproj.transform({', '.join(vargs)})" if vargs else "pyproj.transform"
+
 
 if pyproj:
     FUNC_DISPATCH_TABLE: Dict[FuncType, Tuple[Callable, bool]] = {
@@ -33,10 +38,12 @@ if pyproj:
     }
 
     EXTERNAL_TYPE_MAP = {
-        pyproj.Proj: lambda self: JuliaExternalModulePlugins.visit_proj(self, None, [], []),
-        pyproj.transform: lambda self: JuliaExternalModulePlugins.visit_transform(self, None, [], []),
+        pyproj.Proj: lambda self: JuliaExternalModulePlugins.visit_proj(
+            self, None, [], []
+        ),
+        pyproj.transform: lambda self: JuliaExternalModulePlugins.visit_transform(
+            self, None, [], []
+        ),
     }
 
-    IGNORED_MODULE_SET = set([
-        "pyproj"
-    ])
+    IGNORED_MODULE_SET = set(["pyproj"])

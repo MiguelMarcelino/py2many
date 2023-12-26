@@ -170,13 +170,7 @@ CONTAINER_TYPE_MAP = {
     bytearray: f"Vector{{UInt8}}",
 }
 
-RESERVED_TYPEVARS = {
-    "BLiteral",
-    "OLiteral",
-    "HLiteral",
-    "BigInt",
-    "BigFloat"
-}
+RESERVED_TYPEVARS = {"BLiteral", "OLiteral", "HLiteral", "BigInt", "BigFloat"}
 
 
 def jl_symbol(node):
@@ -205,7 +199,7 @@ class CLikeTranspiler(CommonCLikeTranspiler, JuliaNodeVisitor, ExternalBase):
         self._attr_dispatch_table = ATTR_DISPATCH_TABLE
         #
         self._reserved_typevars = RESERVED_TYPEVARS
-        self._generics = [] # List containing generic types
+        self._generics = []  # List containing generic types
         self._use_modules = None
         self._external_type_map = {}
         self._flags = None
@@ -427,7 +421,11 @@ class CLikeTranspiler(CommonCLikeTranspiler, JuliaNodeVisitor, ExternalBase):
         return func
 
     def _dispatch(
-        self, node: ast.Call, fname: str, vargs: List[str], kwargs: list[tuple[str,str]]
+        self,
+        node: ast.Call,
+        fname: str,
+        vargs: List[str],
+        kwargs: list[tuple[str, str]],
     ) -> Optional[str]:
         if len(node.args) > 0:
             var = vargs[0]
@@ -477,15 +475,16 @@ class CLikeTranspiler(CommonCLikeTranspiler, JuliaNodeVisitor, ExternalBase):
                 ):
                     return dispatch_func
 
-        if dispatch_func := self._clike_dispatch(node, 
-                getattr(node, "orig_name", None), vargs, kwargs):
+        if dispatch_func := self._clike_dispatch(
+            node, getattr(node, "orig_name", None), vargs, kwargs
+        ):
             # Special attribute used for dispatching
             return dispatch_func
         return self._clike_dispatch(node, fname, vargs, kwargs)
 
     # Adds kwargs to clike dispatch
     def _clike_dispatch(
-        self, node, fname: str, vargs: List[str], kwargs: list[tuple[str,str]]
+        self, node, fname: str, vargs: List[str], kwargs: list[tuple[str, str]]
     ) -> Optional[str]:
         if fname in self._dispatch_map:
             try:

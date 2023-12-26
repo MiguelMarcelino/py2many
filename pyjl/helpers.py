@@ -9,6 +9,7 @@ from py2many.scope import ScopeList
 from py2many.tracer import find_node_by_name_and_type
 from pyjl.global_vars import SEP
 
+
 # TODO: Currently not in use
 def get_range_from_for_loop(node):
     iter = 0
@@ -150,6 +151,7 @@ def fill_attributes(
         node.is_annotation = is_annotation
     return node
 
+
 def pycall_import(self, node: ast.Call, mod_name: str, opt_name: Optional[str] = None):
     self._usings.add("PyCall")
     if opt_name:
@@ -159,6 +161,7 @@ def pycall_import(self, node: ast.Call, mod_name: str, opt_name: Optional[str] =
         self._pycall_imports.add(mod_name)
         import_stmt = f'{mod_name} = pyimport("{mod_name}")'
     self._globals.add(import_stmt)
+
 
 def verify_types(annotation: ast.AST, t: str):
     """Verifies if the provided type is in the annotation"""

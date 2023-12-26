@@ -9,17 +9,14 @@ def find_ordered_collections(node, extension=False):
     visitor = JuliaOrderedCollectionTransformer()
     visitor.visit(node)
 
+
 def parse_decorators(node, extension=False):
     visitor = JuliaDecoratorTransformer()
     visitor.visit(node)
 
-class JuliaOrderedCollectionTransformer(ast.NodeTransformer):
 
-    SPECIAL_FUNC_CALLS = set([
-        "items",
-        "keys",
-        "values"
-    ])
+class JuliaOrderedCollectionTransformer(ast.NodeTransformer):
+    SPECIAL_FUNC_CALLS = set(["items", "keys", "values"])
 
     def __init__(self) -> None:
         super().__init__()
@@ -37,7 +34,9 @@ class JuliaOrderedCollectionTransformer(ast.NodeTransformer):
                     t_id = get_id(t)
                     for spec_call_name in self.SPECIAL_FUNC_CALLS:
                         call_id = f"{t_id}.{spec_call_name}"
-                        call_node = find_node_by_name_and_type(call_id, ast.Call, node.scopes)[0]
+                        call_node = find_node_by_name_and_type(
+                            call_id, ast.Call, node.scopes
+                        )[0]
                         if call_node:
                             node.value.use_ordered_collection = True
                             break
@@ -54,7 +53,9 @@ class JuliaOrderedCollectionTransformer(ast.NodeTransformer):
             t_id = get_id(node.target)
             for spec_call_name in self.SPECIAL_FUNC_CALLS:
                 call_id = f"{t_id}.{spec_call_name}"
-                call_node = find_node_by_name_and_type(call_id, ast.Call, node.scopes)[0]
+                call_node = find_node_by_name_and_type(call_id, ast.Call, node.scopes)[
+                    0
+                ]
                 if call_node:
                     node.value.use_ordered_collection = True
                     break
@@ -62,8 +63,9 @@ class JuliaOrderedCollectionTransformer(ast.NodeTransformer):
 
 
 class JuliaDecoratorTransformer(ast.NodeTransformer):
-    """Parses decorators and adds them to functions 
+    """Parses decorators and adds them to functions
     and class scopes"""
+
     def __init__(self):
         super().__init__()
 
@@ -79,8 +81,9 @@ class JuliaDecoratorTransformer(ast.NodeTransformer):
         parsed_decorators: dict[str, dict[str, str]] = {}
         if decorator_list := getattr(node, "decorator_list", None):
             for decorator in decorator_list:
-                if isinstance(decorator, ast.Name) or \
-                        isinstance(decorator, ast.Attribute):
+                if isinstance(decorator, ast.Name) or isinstance(
+                    decorator, ast.Attribute
+                ):
                     parsed_decorators[get_id(decorator)] = None
                 elif isinstance(decorator, ast.Call):
                     keywords = {}
@@ -90,9 +93,8 @@ class JuliaDecoratorTransformer(ast.NodeTransformer):
                         else:
                             keywords[keyword.arg] = keyword.value
                     parsed_decorators[get_id(decorator.func)] = keywords
-                
-        if "dataclass" in parsed_decorators \
-                and "jl_dataclass" in parsed_decorators:
+
+        if "dataclass" in parsed_decorators and "jl_dataclass" in parsed_decorators:
             parsed_decorators.pop("dataclass")
 
         node.parsed_decorators = parsed_decorators

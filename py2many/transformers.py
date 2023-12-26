@@ -200,6 +200,7 @@ class MutabilityTransformer(ast.NodeTransformer):
 
 class CorrectNodeAttributes(ast.NodeTransformer):
     """Avoid that newly created nodes are missing any attributes"""
+
     def __init__(self) -> None:
         super().__init__()
 

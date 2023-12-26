@@ -224,9 +224,11 @@ class CLikeTranspiler(ast.NodeVisitor):
 
     def _get_docstring(self, node) -> str:
         docstring_comment = getattr(node, "docstring_comment", None)
-        comment = self.visit_Constant(docstring_comment, 
-                quotes = False, docstring = True) \
-            if docstring_comment else None
+        comment = (
+            self.visit_Constant(docstring_comment, quotes=False, docstring=True)
+            if docstring_comment
+            else None
+        )
         return self.comment(comment) if comment else None
 
     def visit(self, node) -> str:
@@ -255,11 +257,12 @@ class CLikeTranspiler(ast.NodeVisitor):
         if self._filename:
             self._module = Path(self._filename).stem
         # If there is an import_basedir, use that instead of basedir
-        self._basedir = getattr(node, "import_basedir", 
-            getattr(node, "__basedir__", None))
-        
+        self._basedir = getattr(
+            node, "import_basedir", getattr(node, "__basedir__", None)
+        )
+
         self._imports = list(map(get_id, getattr(node, "imports", [])))
-        
+
         # Visit non-function nodes
         body_dict: Dict[ast.AST, str] = OrderedDict()
         for b in node.body:
@@ -332,7 +335,7 @@ class CLikeTranspiler(ast.NodeVisitor):
         for name, alias in names:
             n_import = name.split(".")
             for i in range(len(n_import)):
-                import_name = ".".join(n_import[0:i+1])
+                import_name = ".".join(n_import[0 : i + 1])
                 if import_name in self._ignored_module_set:
                     break
             else:
@@ -605,7 +608,9 @@ class CLikeTranspiler(ast.NodeVisitor):
     def _map_container_type(self, typename) -> str:
         return self._container_type_map.get(typename, self._default_type)
 
-    def _typename_from_type_node(self, node, parse_func = None, default = None) -> Union[List, str, None]:
+    def _typename_from_type_node(
+        self, node, parse_func=None, default=None
+    ) -> Union[List, str, None]:
         if isinstance(node, ast.Name):
             return get_id(node)
         elif isinstance(node, ast.Attribute):
@@ -617,17 +622,22 @@ class CLikeTranspiler(ast.NodeVisitor):
             return f"{self._typename_from_type_node(node.value, parse_func, default)}.{node.attr}"
         elif isinstance(node, ast.Subscript):
             (value_type, index_type) = tuple(
-                map(lambda x: self._typename_from_type_node(x, parse_func, default), 
-                    (node.value, node.slice))
+                map(
+                    lambda x: self._typename_from_type_node(x, parse_func, default),
+                    (node.value, node.slice),
+                )
             )
             node.container_type = (value_type, index_type)
             return f"{value_type}[{index_type}]"
         elif isinstance(node, ast.Constant):
             return f"{node.value}"
-        elif isinstance(node, ast.Tuple) \
-                or isinstance(node, ast.List):
-            elts = list(map(
-                lambda x: self._typename_from_type_node(x, parse_func, default), node.elts))
+        elif isinstance(node, ast.Tuple) or isinstance(node, ast.List):
+            elts = list(
+                map(
+                    lambda x: self._typename_from_type_node(x, parse_func, default),
+                    node.elts,
+                )
+            )
             return ", ".join(elts)
         return default
 
@@ -668,8 +678,10 @@ class CLikeTranspiler(ast.NodeVisitor):
             typename = self._typename_from_type_node(type_node)
             if isinstance(type_node, ast.Subscript):
                 node.container_type = type_node.container_type
-            if isinstance(type_node, ast.Name) and \
-                    (id := get_id(type_node)) in self._container_type_map:
+            if (
+                isinstance(type_node, ast.Name)
+                and (id := get_id(type_node)) in self._container_type_map
+            ):
                 node.container_type = (id, "Any")
 
             if cont_type := getattr(node, "container_type", None):

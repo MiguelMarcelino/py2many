@@ -4,12 +4,14 @@ from typing import Union
 from pathlib import PosixPath, WindowsPath
 from py2many.ast_helpers import get_id
 
+
 def is_file(path: str, basedir, extension="py"):
     """Takes a dot separated file path"""
     if not path or not basedir:
         return False
     maybe_path = parse_import_path(path, basedir)
     return os.path.isfile(f"{maybe_path}.{extension}")
+
 
 def is_dir(path: str, basedir):
     """Takes a dot separated directory path"""
@@ -18,6 +20,7 @@ def is_dir(path: str, basedir):
     maybe_path = parse_import_path(path, basedir)
     return os.path.isdir(maybe_path)
 
+
 def parse_import_path(import_name: str, basedir) -> str:
     """Small wrapper around parse_path function"""
     cwd = os.getcwd().split(os.sep)
@@ -25,7 +28,7 @@ def parse_import_path(import_name: str, basedir) -> str:
     if os.path.isfile(basedir.as_posix()):
         base_dir = base_dir[:-1]
     path = import_name.split(".")
-    # In case there are empty list positions, 
+    # In case there are empty list positions,
     # replace them with ".."  to go back one directory
     for i in range(len(path)):
         p = path[i]
@@ -38,6 +41,7 @@ def parse_import_path(import_name: str, basedir) -> str:
     else:
         full_path = cwd + base_dir + path
     return parse_path(full_path, os.sep)
+
 
 def parse_path(path: list[str], sep):
     """Parses a path that has been sepparated

@@ -12,7 +12,11 @@ from py2many.inference import get_inferred_type
 from typing import Any, cast, Optional
 
 from py2many.scope import ScopeList
-from py2many.tracer import find_node_by_name_and_type, find_node_by_type, find_parent_of_type
+from py2many.tracer import (
+    find_node_by_name_and_type,
+    find_node_by_type,
+    find_parent_of_type,
+)
 
 
 class InferredAnnAssignRewriter(ast.NodeTransformer):
@@ -445,19 +449,19 @@ class UnpackScopeRewriter(ast.NodeTransformer):
 
 
 class UnitTestRewriter(ast.NodeTransformer):
-
     TEST_MODULE_SET = set(["unittest.TestCase"])
     SETUP_METHODS = set(["setUp"])
     TEARDOWN_METHODS = set(["tearDown"])
 
     IS_PYTHON_MAIN = lambda self, node: (
-        isinstance(node, ast.If) and
-        isinstance(node.test, ast.Compare) and
-        isinstance(node.test.left, ast.Name) and
-        node.test.left.id == "__name__" and
-        isinstance(node.test.ops[0], ast.Eq) and
-        isinstance(node.test.comparators[0], ast.Constant) and
-        node.test.comparators[0].value == "__main__")
+        isinstance(node, ast.If)
+        and isinstance(node.test, ast.Compare)
+        and isinstance(node.test.left, ast.Name)
+        and node.test.left.id == "__name__"
+        and isinstance(node.test.ops[0], ast.Eq)
+        and isinstance(node.test.comparators[0], ast.Constant)
+        and node.test.comparators[0].value == "__main__"
+    )
 
     """Extracts unittests and calls all the necessary functions 
     in the main function"""
@@ -478,8 +482,7 @@ class UnitTestRewriter(ast.NodeTransformer):
             test_funcs = []
             for n in node.body:
                 self.test_base = node.bases[0]
-                if isinstance(n, ast.FunctionDef) and \
-                        getattr(n, "name", None):
+                if isinstance(n, ast.FunctionDef) and getattr(n, "name", None):
                     if n.name in self.SETUP_METHODS:
                         set_up.append(n.name)
                     elif n.name in self.TEARDOWN_METHODS:
@@ -508,8 +511,7 @@ class UnitTestRewriter(ast.NodeTransformer):
     def visit_Attribute(self, node: ast.Attribute) -> Any:
         # Add annotation, as functions are changed to global scope
         self.generic_visit(node)
-        if get_id(node.value) == "self" and \
-                self.test_base:
+        if get_id(node.value) == "self" and self.test_base:
             node.value.annotation = self.test_base
         return node
 
@@ -517,11 +519,13 @@ class UnitTestRewriter(ast.NodeTransformer):
         # Rewriting with statements with assertRaises
         self.generic_visit(node)
         ctx = node.items[0].context_expr
-        if len(node.body) == 1 and \
-                isinstance(ctx, ast.Call) and \
-                isinstance(ctx.func, ast.Attribute) and \
-                ctx.func.attr == "assertRaises":
-            ctx.args.append(node.body[0]) 
+        if (
+            len(node.body) == 1
+            and isinstance(ctx, ast.Call)
+            and isinstance(ctx.func, ast.Attribute)
+            and ctx.func.attr == "assertRaises"
+        ):
+            ctx.args.append(node.body[0])
             return ctx
         return node
 
@@ -538,7 +542,7 @@ class UnitTestRewriter(ast.NodeTransformer):
             ):
                 body.append(n)
         # Create Function Calls
-        for (class_name, func_defs) in self._test_classes:
+        for class_name, func_defs in self._test_classes:
             # Convert to snake case
             # (?<!^) --> Don't put underscore at beginning
             #    ?<! --> negative lookbehind: asserts that string
@@ -612,10 +616,10 @@ class LoopElseRewriter(ast.NodeTransformer):
         if len(node.orelse) > 0:
             lineno = node.orelse[0].lineno
             if_expr = ast.If(
-                test= ast.UnaryOp(
-                    op = ast.Not(),
+                test=ast.UnaryOp(
+                    op=ast.Not(),
                     operand=ast.Name(id=self._has_break_var_name),
-                    scopes=node.scopes
+                    scopes=node.scopes,
                 ),
                 body=[oe for oe in node.orelse],
                 orelse=[],
@@ -628,14 +632,13 @@ class LoopElseRewriter(ast.NodeTransformer):
         self.generic_visit(node)
         parent_loop = find_parent_of_type(ast.For, node.scopes)
         is_local = False
-        if parent_loop and \
-                getattr(parent_loop, "orelse", None):
+        if parent_loop and getattr(parent_loop, "orelse", None):
             # Check if the node is a local assignment
             is_local = True
         assign = ast.Assign(
             targets=[ast.Name(id=self._has_break_var_name)],
             value=None,
-            scopes=node.scopes
+            scopes=node.scopes,
         )
         ast.fix_missing_locations(assign)
         body = []

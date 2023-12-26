@@ -9,7 +9,9 @@ from py2many.tracer import is_list
 
 
 class JuliaExternalModulePlugins:
-    def visit_npsum(t_self, node: ast.Call, vargs: list[str], kwargs: list[tuple[str, str]]) -> str:
+    def visit_npsum(
+        t_self, node: ast.Call, vargs: list[str], kwargs: list[tuple[str, str]]
+    ) -> str:
         dims = None
         for kwarg in kwargs:
             if kwarg[0] == "axis":
@@ -18,7 +20,9 @@ class JuliaExternalModulePlugins:
             return f"sum({vargs[0]}, dims={dims})"
         return f"sum({vargs[0]})"
 
-    def visit_npwhere(t_self, node: ast.Call, vargs: list[str], kwargs: list[tuple[str, str]]) -> str:
+    def visit_npwhere(
+        t_self, node: ast.Call, vargs: list[str], kwargs: list[tuple[str, str]]
+    ) -> str:
         if len(vargs) == 3:
             return f"@. ifelse({vargs[0]}, {vargs[1]}, {vargs[2]})"
         else:
@@ -31,7 +35,9 @@ class JuliaExternalModulePlugins:
                 var_name = "np_x"
                 return f"""[{var_name} for {var_name} in {loop_var} if {vargs[1]}]"""
 
-    def visit_nparray(t_self, node: ast.Call, vargs: list[str], kwargs: list[tuple[str, str]]) -> str:
+    def visit_nparray(
+        t_self, node: ast.Call, vargs: list[str], kwargs: list[tuple[str, str]]
+    ) -> str:
         dtype = "Float64"
         for kwarg in kwargs:
             if kwarg[0] == "dtype":
@@ -43,10 +49,14 @@ class JuliaExternalModulePlugins:
             elems = vargs[0]
         return f"Vector{{{dtype}}}({elems})"
 
-    def visit_npappend(t_self, node: ast.Call, vargs: list[str], kwargs: list[tuple[str, str]]) -> str:
+    def visit_npappend(
+        t_self, node: ast.Call, vargs: list[str], kwargs: list[tuple[str, str]]
+    ) -> str:
         return f"push!({vargs[0], vargs[1]})"
 
-    def visit_npzeros(t_self, node: ast.Call, vargs: list[str], kwargs: list[tuple[str, str]]) -> str:
+    def visit_npzeros(
+        t_self, node: ast.Call, vargs: list[str], kwargs: list[tuple[str, str]]
+    ) -> str:
         zero_type = "Float64"
         for kwarg in kwargs:
             if kwarg[0] == "dtype":
@@ -65,7 +75,9 @@ class JuliaExternalModulePlugins:
 
         return f"zeros({zero_type}, {', '.join(parsed_args)})"
 
-    def visit_npmultiply(t_self, node: ast.Call, vargs: list[str], kwargs: list[tuple[str, str]]) -> str:
+    def visit_npmultiply(
+        t_self, node: ast.Call, vargs: list[str], kwargs: list[tuple[str, str]]
+    ) -> str:
         # Since two elements must have same type, we just need to check one
         left = node.args[0]
         if is_list(left):
@@ -73,11 +85,15 @@ class JuliaExternalModulePlugins:
             return f"mul!({vargs[0]}, {vargs[1]})"
         return f"repeat({vargs[0]}, {vargs[1]})"
 
-    def visit_npnewaxis(t_self, node: ast.Call, vargs: list[str], kwargs: list[tuple[str, str]]):
+    def visit_npnewaxis(
+        t_self, node: ast.Call, vargs: list[str], kwargs: list[tuple[str, str]]
+    ):
         # TODO: Search broadcasting in Julia
         pass
 
-    def visit_ones(t_self, node: ast.Call, vargs: list[str], kwargs: list[tuple[str, str]]):
+    def visit_ones(
+        t_self, node: ast.Call, vargs: list[str], kwargs: list[tuple[str, str]]
+    ):
         # Default is float
         dtype = "float"
         for kwarg in kwargs:
@@ -87,7 +103,9 @@ class JuliaExternalModulePlugins:
             return f"trues{vargs[0]}"
         return f"ones({t_self._map_type(dtype)}, {vargs[0]})"
 
-    def visit_argmax(t_self, node: ast.Call, vargs: list[str], kwargs: list[tuple[str, str]]):
+    def visit_argmax(
+        t_self, node: ast.Call, vargs: list[str], kwargs: list[tuple[str, str]]
+    ):
         axis = None
         for kwarg in kwargs:
             if kwarg[0] == "axix":
@@ -104,36 +122,54 @@ class JuliaExternalModulePlugins:
         # Decrement 1, as Julia indexes arrays from 1
         return f"argmax(@view {vargs[0]}[:]) - 1"
 
-    def visit_dotproduct(t_self, node: ast.Call, vargs: list[str], kwargs: list[tuple[str, str]]):
+    def visit_dotproduct(
+        t_self, node: ast.Call, vargs: list[str], kwargs: list[tuple[str, str]]
+    ):
         if not vargs:
             return "mult"
-        match_list = lambda x: re.match(r"^list|^List|^tuple|^Tuple", x) is not None \
-            if x else False
-        match_scalar = lambda x: re.match(r"^int|^float|^bool", x) is not None \
-            if x else False
-        match_matrix = lambda x: re.match(r"^Matrix|^np.ndarray", x) is not None \
-            if x else False
+        match_list = (
+            lambda x: re.match(r"^list|^List|^tuple|^Tuple", x) is not None
+            if x
+            else False
+        )
+        match_scalar = (
+            lambda x: re.match(r"^int|^float|^bool", x) is not None if x else False
+        )
+        match_matrix = (
+            lambda x: re.match(r"^Matrix|^np.ndarray", x) is not None if x else False
+        )
         # Accounts for JuliaMethodCallRewriter when getting node.args
         if t1 := getattr(node.args[1], "annotation", None):
             types_0_str = t_self.visit(t1)
         else:
-            types_0_str = t_self.visit(getattr(node.scopes.find(vargs[0]), "annotation", ast.Name(id="")))
+            types_0_str = t_self.visit(
+                getattr(node.scopes.find(vargs[0]), "annotation", ast.Name(id=""))
+            )
         if t2 := getattr(node.args[2], "annotation", None):
             types_1_str = t_self.visit(t2)
         else:
-            types_1_str = t_self.visit(getattr(node.scopes.find(vargs[1]), "annotation", ast.Name(id="")))
+            types_1_str = t_self.visit(
+                getattr(node.scopes.find(vargs[1]), "annotation", ast.Name(id=""))
+            )
         if match_list(types_0_str) and match_list(types_1_str):
             return f"({vargs[0]} ⋅ {vargs[1]})"
-        elif match_scalar(types_0_str) or match_scalar(types_1_str) or \
-                (match_matrix(types_0_str) and match_matrix(types_1_str)):
+        elif (
+            match_scalar(types_0_str)
+            or match_scalar(types_1_str)
+            or (match_matrix(types_0_str) and match_matrix(types_1_str))
+        ):
             return f"({vargs[0]} * {vargs[1]})"
         return f"({vargs[0]} .* {vargs[1]})"
 
-    def visit_transpose(t_self, node: ast.Call, vargs: list[str], kwargs: list[tuple[str, str]]) -> str:
+    def visit_transpose(
+        t_self, node: ast.Call, vargs: list[str], kwargs: list[tuple[str, str]]
+    ) -> str:
         t_self._usings.add("LinearAlgebra")
         return f"LinearAlgebra.transpose({', '.join(vargs)})"
 
-    def visit_exp(t_self, node: ast.Call, vargs: list[str], kwargs: list[tuple[str, str]]):
+    def visit_exp(
+        t_self, node: ast.Call, vargs: list[str], kwargs: list[tuple[str, str]]
+    ):
         arg = node.args[0]
         # Identify scalar operations
         if isinstance(arg, ast.Name):
@@ -144,7 +180,9 @@ class JuliaExternalModulePlugins:
             return f"ℯ^{vargs[0]}"
         return f"ℯ.^{vargs[0]}"
 
-    def visit_reshape(t_self, node: ast.Call, vargs: list[str], kwargs: list[tuple[str, str]]):
+    def visit_reshape(
+        t_self, node: ast.Call, vargs: list[str], kwargs: list[tuple[str, str]]
+    ):
         if len(vargs) == 2:
             return f"reshape({vargs[0]}, {vargs[1]})"
         return "reshape"
@@ -159,7 +197,10 @@ FUNC_DISPATCH_TABLE: Dict[FuncType, Tuple[Callable, bool]] = {
     np.append: (JuliaExternalModulePlugins.visit_npappend, True),
     np.zeros: (JuliaExternalModulePlugins.visit_npzeros, True),
     np.multiply: (JuliaExternalModulePlugins.visit_npmultiply, True),
-    np.sqrt: (lambda self, node, vargs, kwargs: f"sqrt({vargs[0]})" if vargs else "√", True),
+    np.sqrt: (
+        lambda self, node, vargs, kwargs: f"sqrt({vargs[0]})" if vargs else "√",
+        True,
+    ),
     np.arccos: (lambda self, node, vargs, kwargs: f"acos({vargs[0]})", True),
     np.arcsin: (lambda self, node, vargs, kwargs: f"asin({vargs[0]})", True),
     np.arctan: (lambda self, node, vargs, kwargs: f"atan({vargs[0]})", True),
@@ -175,7 +216,10 @@ FUNC_DISPATCH_TABLE: Dict[FuncType, Tuple[Callable, bool]] = {
     np.exp: (JuliaExternalModulePlugins.visit_exp, True),
     np.argmax: (JuliaExternalModulePlugins.visit_argmax, True),
     np.shape: (lambda self, node, vargs, kwargs: f"size({vargs[0]})", True),
-    np.random.randn: (lambda self, node, vargs, kwargs: f"randn({', '.join(vargs)})", True),
+    np.random.randn: (
+        lambda self, node, vargs, kwargs: f"randn({', '.join(vargs)})",
+        True,
+    ),
     np.dot: (JuliaExternalModulePlugins.visit_dotproduct, True),
     np.transpose: (JuliaExternalModulePlugins.visit_transpose, True),
     np.ndarray.transpose: (JuliaExternalModulePlugins.visit_transpose, True),
@@ -205,25 +249,33 @@ EXTERNAL_TYPE_MAP = {
     np.array: lambda self: "Vector",
 }
 
-class FuncTypeDispatch():
-    def visit_npdot(self, node: ast.Call, vargs: list[str], kwargs: list[tuple[str,str]]):
+
+class FuncTypeDispatch:
+    def visit_npdot(
+        self, node: ast.Call, vargs: list[str], kwargs: list[tuple[str, str]]
+    ):
         # From Python docs (https://numpy.org/doc/stable/reference/generated/numpy.dot.html?highlight=numpy%20dot#numpy.dot)
-        # - If both a and b are 1-D arrays, it is inner product of vectors 
+        # - If both a and b are 1-D arrays, it is inner product of vectors
         #   (without complex conjugation).
-        # - If both a and b are 2-D arrays, it is matrix multiplication, 
+        # - If both a and b are 2-D arrays, it is matrix multiplication,
         #   but using matmul or a @ b is preferred.
-        # - If either a or b is 0-D (scalar), it is equivalent to 
+        # - If either a or b is 0-D (scalar), it is equivalent to
         #   multiply and using numpy.multiply(a, b) or a * b is preferred.
-        # - If a is an N-D array and b is a 1-D array, it is a sum product 
+        # - If a is an N-D array and b is a 1-D array, it is a sum product
         #   over the last axis of a and b.
-        # - If a is an N-D array and b is an M-D array (where M>=2), it is a 
+        # - If a is an N-D array and b is an M-D array (where M>=2), it is a
         #   sum product over the last axis of a and the second-to-last axis of b.
-        match_list = lambda x: re.match(r"^list|^List|^tuple|^Tuple", x) is not None \
-            if x else False
-        match_scalar = lambda x: re.match(r"^int|^float|^bool", x) is not None \
-            if x else None
-        match_matrix = lambda x: re.match(r"^Matrix|^np.ndarray", x) is not None \
-            if x else None
+        match_list = (
+            lambda x: re.match(r"^list|^List|^tuple|^Tuple", x) is not None
+            if x
+            else False
+        )
+        match_scalar = (
+            lambda x: re.match(r"^int|^float|^bool", x) is not None if x else None
+        )
+        match_matrix = (
+            lambda x: re.match(r"^Matrix|^np.ndarray", x) is not None if x else None
+        )
         types_0 = getattr(vargs[0], "annotation", None)
         types_1 = getattr(vargs[1], "annotation", None)
         types_0_str = ast.unparse(types_0) if types_0 else ""
@@ -232,10 +284,12 @@ class FuncTypeDispatch():
             return "list"
         elif (m0 := match_scalar(types_0_str)) or (m1 := match_scalar(types_1_str)):
             return types_0_str if m0 else types_1_str
-        elif (match_matrix(types_0_str) and match_list(types_1_str)) or \
-                (match_matrix(types_1_str) and match_list(types_0_str)):
+        elif (match_matrix(types_0_str) and match_list(types_1_str)) or (
+            match_matrix(types_1_str) and match_list(types_0_str)
+        ):
             return "list"
         return "np.ndarray"
+
 
 FUNC_TYPE_MAP = {
     np.random.randn: lambda self, node, vargs, kwargs: "np.ndarray",

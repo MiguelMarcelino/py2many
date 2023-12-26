@@ -6,6 +6,7 @@
 import ast
 from typing import Any, Optional
 
+
 ######################################
 ############### Types ################
 ######################################
@@ -44,6 +45,7 @@ class OrderedSet(ast.Set):
     elts: list[ast.expr]
     annotation: ast.expr
 
+
 class Block(ast.FunctionDef):
     name: str
     block_expr: Optional[ast.expr]
@@ -54,6 +56,7 @@ class Block(ast.FunctionDef):
     block_type: str
     ctx: ast.expr_context
 
+
 class Constructor(ast.FunctionDef):
     name: str
     args: ast.arguments
@@ -61,25 +64,29 @@ class Constructor(ast.FunctionDef):
     returns: ast.expr
     ctx: ast.expr_context
 
+
 class Symbol(ast.Name):
     id: str
 
-# Julia lambdas allows multiline functions, 
-# whereas Python's equivalent construct 
+
+# Julia lambdas allows multiline functions,
+# whereas Python's equivalent construct
 # does not does not
 class JuliaLambda(ast.FunctionDef):
-    name: str # Should always be None
+    name: str  # Should always be None
     args: ast.arguments
     body: list[ast.expr]
     returns: ast.expr
     ctx: ast.expr_context
 
+
 class InlineFunction(ast.FunctionDef):
     name: str
     args: ast.arguments
-    body: list[ast.expr] # Restriction: Only first element is evaluated
-    returns: ast.expr # By default, is empty
+    body: list[ast.expr]  # Restriction: Only first element is evaluated
+    returns: ast.expr  # By default, is empty
     ctx: ast.expr_context
+
 
 ######################################
 ############### Parser ###############
@@ -149,7 +156,6 @@ class JuliaNodeVisitor(ast.NodeVisitor):
         """Visit Julia inline function"""
         self.visit_FunctionDef(node)
         return node
-
 
 
 class JuliaNodeTransformer(JuliaNodeVisitor):

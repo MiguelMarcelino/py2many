@@ -35,7 +35,7 @@ LANG_MAP = {
 
 
 @dataclass
-class ExternalBase():
+class ExternalBase:
     """Base class to add external modules"""
 
     def import_external_modules(self, lang):
@@ -57,7 +57,6 @@ class ExternalBase():
                             curr_val.extend(obj)
                         elif isinstance(curr_val, set):
                             curr_val.update(obj)
-
 
     def _get_external_modules(self, lang) -> list[tuple[str, str]]:
         p_lang = lang

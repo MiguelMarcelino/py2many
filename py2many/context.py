@@ -1,7 +1,5 @@
 import ast
-import os
 from pathlib import PosixPath, WindowsPath
-import sys
 
 from py2many.ast_helpers import get_id
 from py2many.helpers import get_import_module_name, is_dir

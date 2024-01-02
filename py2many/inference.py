@@ -349,9 +349,6 @@ class InferTypesTransformer(ast.NodeTransformer):
     def visit_Name(self, node):
         annotation = get_inferred_type(node)
         if annotation is not None:
-            if isinstance(annotation, str):
-                print(get_id(node))
-                print(annotation)
             node.annotation = annotation
         if node.id in self._block_annotations:
             node.annotation = self._block_annotations[node.id]
